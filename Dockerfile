@@ -1,22 +1,24 @@
 # Start with the official Node.js slim image
 FROM node:20-slim
 
-# Install unzip only (no recommended extras), then clean up
-RUN apt-get update && \
-  apt-get install -y --no-install-recommends unzip && \
-  rm -rf /var/lib/apt/lists/*
+# The 'tar' command is already included in this base image.
 
 # Set the working directory
 WORKDIR /usr/src/app
 
-# Copy the Stockfish zip file into the image
-COPY stockfish-linux.zip .
+# Copy the Stockfish tar archive from our repository
+# --- CHANGE: Updated filename to match yours ---
+COPY stockfish-ubuntu-x86-64-avx2.tar .
 
-# Unzip the file, rename the binary to `stockfish`, make it executable, clean up
-RUN unzip -q stockfish-linux.zip && \
-  mv $(find . -type f -name "stockfish*" -perm /111 | head -n 1) stockfish && \
+# Extract the archive, rename the binary, make it executable, and clean up
+# --- CHANGE: Removed the 'z' from 'tar -xzf' because it's not a .gz file ---
+RUN tar -xf stockfish-ubuntu-x86-64-avx2.tar && \
+  # The binary is inside a folder named 'stockfish' after extracting
+  mv stockfish/stockfish-ubuntu-x86-64-avx2 stockfish && \
   chmod +x stockfish && \
-  rm stockfish-linux.zip
+  # Clean up the downloaded tar and the now-empty folder
+  rm stockfish-ubuntu-x86-64-avx2.tar && \
+  rm -rf stockfish
 
 # Copy dependency files and install
 COPY package*.json ./
