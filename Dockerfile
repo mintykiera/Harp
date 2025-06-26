@@ -1,22 +1,28 @@
-# Start with an official Node.js image. This includes Linux, Node, and npm.
+# Start with the official Node.js image, which has git pre-installed
 FROM node:20-slim
 
-# Install the git-lfs package using the system's package manager.
-# This runs as a root user, so it has permission.
+# Install the git-lfs package
 RUN apt-get update && apt-get install -y git-lfs
 
-# Set the working directory inside our container
+# Set the working directory for our app
 WORKDIR /usr/src/app
 
-# Copy the package.json and package-lock.json files
+# --- The "Build" Stage ---
+# Copy ONLY the files needed to install dependencies first. This is a Docker optimization.
 COPY package*.json ./
-
-# Install the Node.js dependencies for our project
 RUN npm install
 
-# Copy the rest of our project files (like index.js, commands/, etc.)
+# Now, copy ALL project files into the container. This includes your code,
+# the .git folder, the .gitattributes, and the LFS pointer files.
 COPY . .
 
-# Tell Render what command to run to start the bot.
-# The command in the Render UI will override this, but it's good practice.
+# Run the LFS pull and chmod command INSIDE the Docker build.
+# This downloads the large binary and sets its permission.
+RUN git lfs pull && chmod +x stockfish
+
+# --- The "Run" Stage ---
+# Expose the port your UptimeRobot pings (if you have one)
+EXPOSE 3000
+
+# Set the command to start the bot
 CMD ["npm", "start"]
