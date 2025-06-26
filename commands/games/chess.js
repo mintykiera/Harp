@@ -239,11 +239,23 @@ async function startGame(interaction, gameType, options) {
     activePlayers.add(player.id);
 
     gameData.engine = spawn(stockfishPath);
+
+    // --- FIX & DEBUG ---
+    // 1. Add a listener to see EVERYTHING stockfish says.
+    gameData.engine.stdout.on('data', (data) => {
+      console.log(`[DEBUG] Stockfish says: ${data}`);
+    });
+
+    // 2. Send the required UCI handshake command first.
+    gameData.engine.stdin.write('uci\n');
+
+    // 3. Then, set the difficulty.
     gameData.engine.stdin.write(
       `setoption name Skill Level value ${
         difficultyLevels[options.difficulty]
       }\n`
     );
+
     gameData.engine.on('error', (err) =>
       console.error('Stockfish engine error:', err)
     );
@@ -325,6 +337,7 @@ async function startGame(interaction, gameType, options) {
   const makeBotMove = () => {
     // ... (makeBotMove logic is correct) ...
     return new Promise((resolve) => {
+      console.log(`[DEBUG] Sending to Stockfish: position fen ${game.fen()}`);
       gameData.engine.stdin.write(`position fen ${game.fen()}\n`);
       gameData.engine.stdin.write(`go movetime 1500\n`);
 
