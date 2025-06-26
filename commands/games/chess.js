@@ -14,7 +14,7 @@ const path = require('path');
 
 const activePlayers = new Set();
 const activeGames = new Map();
-const stockfishPath = path.join(__dirname, '..', '..', 'stockfish.exe');
+const stockfishPath = path.join(__dirname, '..', '..', 'stockfish');
 const difficultyLevels = {
   rookie: 1,
   intermediate: 5,
