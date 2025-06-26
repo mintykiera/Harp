@@ -244,9 +244,9 @@ async function startGame(interaction, gameType, options) {
 
     // --- FIX & DEBUG ---
     // 1. Add a listener to see EVERYTHING stockfish says.
-    gameData.engine.stdout.on('data', (data) => {
-      console.log(`[DEBUG] Stockfish says: ${data}`);
-    });
+    // gameData.engine.stdout.on('data', (data) => {
+    //   console.log(`[DEBUG] Stockfish says: ${data}`);
+    // });
 
     // 2. Send the required UCI handshake command first.
     gameData.engine.stdin.write('uci\n');
