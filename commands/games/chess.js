@@ -10,10 +10,11 @@ const {
 const { Chess } = require('chess.js');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
 const activePlayers = new Set();
 const activeGames = new Map();
-const stockfishPath = process.env.STOCKFISH_EXE;
+const stockfishPath = path.join(__dirname, '..', '..', 'stockfish.exe');
 const difficultyLevels = {
   rookie: 1,
   intermediate: 5,
@@ -75,13 +76,13 @@ module.exports = {
     if (activeGames.has(interaction.channelId)) {
       return interaction.reply({
         content: 'A game is already in progress in this channel!',
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
     if (activePlayers.has(interaction.user.id)) {
       return interaction.reply({
         content: 'You are already in a game in another channel!',
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -93,7 +94,7 @@ module.exports = {
       return interaction.reply({
         content:
           'You cannot select a difficulty when challenging a player. Please choose one or the other.',
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -101,19 +102,19 @@ module.exports = {
       if (opponent.bot) {
         return interaction.reply({
           content: "You can't challenge a bot.",
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       if (opponent.id === challenger.id) {
         return interaction.reply({
           content: "You can't challenge yourself!",
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       if (activePlayers.has(opponent.id)) {
         return interaction.reply({
           content: `${opponent.username} is already in a game!`,
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
@@ -175,7 +176,7 @@ module.exports = {
       if (!difficulty) {
         return interaction.reply({
           content: 'You must select a difficulty when playing against the bot.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       if (!stockfishPath || !fs.existsSync(stockfishPath)) {
@@ -184,7 +185,7 @@ module.exports = {
         );
         return interaction.reply({
           content: 'Error: The chess engine is not configured correctly.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
@@ -388,7 +389,7 @@ async function startGame(interaction, gameType, options) {
       if (gameType === 'pve') {
         return interaction.followUp({
           content: 'The bot declines your draw offer. The fight must continue!',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       const opponent =
@@ -429,13 +430,13 @@ async function startGame(interaction, gameType, options) {
       if (gameType === 'pve') {
         return interaction.followUp({
           content: 'You cannot take back a move against the bot.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       if (game.history().length < 2) {
         return interaction.followUp({
           content: 'Not enough moves have been made to take back.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       const opponent =
@@ -497,7 +498,7 @@ async function startGame(interaction, gameType, options) {
         } catch (e2) {
           return interaction.followUp({
             content: `\`${userInput}\` is not a valid move.`,
-            ephemeral: true,
+            flags: [MessageFlags.Ephemeral],
           });
         }
       }
