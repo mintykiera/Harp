@@ -15,7 +15,7 @@ const os = require('os');
 const activePlayers = new Set();
 const activeGames = new Map();
 const stockfishFile = os.platform() === 'win32' ? 'stockfish.exe' : 'stockfish';
-const stockfishPath = path.join(__dirname, '..', '..', stockfishFile);
+const stockfishPath = path.join(__dirname, '..', '..', '..', 'stockfish');
 const difficultyLevels = {
   rookie: 1,
   intermediate: 5,
@@ -199,6 +199,7 @@ module.exports = {
         });
       }
       if (!stockfishPath || !fs.existsSync(stockfishPath)) {
+        console.log('[DEBUG] Looking for Stockfish at:', stockfishPath);
         console.error(
           `FATAL: stockfish.exe not found at path: ${stockfishPath}`
         );
