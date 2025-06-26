@@ -14,7 +14,8 @@ const os = require('os');
 
 const activePlayers = new Set();
 const activeGames = new Map();
-const stockfishFile = os.platform() === 'win32' ? 'stockfish.exe' : 'stockfish';
+const stockfishFile =
+  os.platform() === 'win32' ? 'stockfish.exe' : 'stockfish_bin';
 const stockfishPath = path.join(__dirname, '../../', stockfishFile);
 const difficultyLevels = {
   rookie: 1,
