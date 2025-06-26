@@ -11,9 +11,11 @@ const { Chess } = require('chess.js');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const activePlayers = new Set();
 const activeGames = new Map();
+const stockfishFile = os.platform() === 'win32' ? 'stockfish.exe' : 'stockfish';
 const stockfishPath = path.join(__dirname, '..', '..', 'stockfish');
 const difficultyLevels = {
   rookie: 1,
