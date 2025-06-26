@@ -1,39 +1,33 @@
-# --- Stage 1: The "Builder" ---
-# This stage will clone the repo and download the LFS files.
-FROM node:20-slim AS builder
-
-# Install our needed system packages
-RUN apt-get update && apt-get install -y git git-lfs
-
-# Set the working directory
-WORKDIR /app
-
-# Clone the public repository into the current directory (.)
-RUN git clone https://github.com/mintykiera/MMKV.git .
-
-# Now that we are in a proper git repo, pull the LFS files
-RUN git lfs pull
-
-# Install npm dependencies
-RUN npm install
-
-# --- Stage 2: The Final Application ---
-# This stage builds the lean, final image for running the bot.
+# Start with the official Node.js image
 FROM node:20-slim
 
+# Install system packages we need: curl to download and unzip to extract
+RUN apt-get update && apt-get install -y curl unzip
+
+# Set the working directory for our app
 WORKDIR /usr/src/app
 
-# Copy the package files from the builder stage
-COPY --from=builder /app/package*.json ./
+# --- This is the new "Download Binaries" stage ---
+# Download and set up the Linux version of Stockfish
+RUN curl -L -o stockfish.zip "https://stockfishchess.org/files/stockfish-windows-x86-64-avx2.zip" && \
+  unzip stockfish.zip && \
+  mv stockfish/stockfish-windows-x86-64-avx2.exe stockfish.exe && \
+  rm -rf stockfish stockfish.zip
 
-# Install ONLY production dependencies to keep the image small
-RUN npm install --omit=dev
+RUN curl -L -o stockfish_linux.zip "https://stockfishchess.org/files/stockfish-ubuntu-x86-64-avx2.zip" && \
+  unzip stockfish_linux.zip && \
+  mv stockfish/stockfish-ubuntu-x86-64-avx2 stockfish && \
+  chmod +x stockfish && \
+  rm -rf stockfish stockfish_linux.zip
+# --- End of Download Stage ---
 
-# Copy the rest of the application code AND the now-downloaded LFS files
-COPY --from=builder /app .
 
-# Re-apply the execute permission, just to be safe
-RUN chmod +x stockfish
+# Copy package files for dependency installation
+COPY package*.json ./
+RUN npm install
+
+# Copy the rest of our application code
+COPY . .
 
 # Set the command to start the bot
 CMD ["npm", "start"]
