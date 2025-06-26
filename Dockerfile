@@ -7,18 +7,14 @@ FROM node:20-slim
 WORKDIR /usr/src/app
 
 # Copy the Stockfish tar archive from our repository
-# --- CHANGE: Updated filename to match yours ---
 COPY stockfish-ubuntu-x86-64-avx2.tar .
 
 # Extract the archive, rename the binary, make it executable, and clean up
-# --- CHANGE: Removed the 'z' from 'tar -xzf' because it's not a .gz file ---
 RUN tar -xf stockfish-ubuntu-x86-64-avx2.tar && \
-  # The binary is inside a folder named 'stockfish' after extracting
-  mv stockfish/stockfish-ubuntu-x86-64-avx2 stockfish && \
+  # The tar file extracts the binary directly, so we just rename it.
+  mv stockfish-ubuntu-x86-64-avx2 stockfish && \
   chmod +x stockfish && \
-  # Clean up the downloaded tar and the now-empty folder
-  rm stockfish-ubuntu-x86-64-avx2.tar && \
-  rm -rf stockfish
+  rm stockfish-ubuntu-x86-64-avx2.tar
 
 # Copy dependency files and install
 COPY package*.json ./
