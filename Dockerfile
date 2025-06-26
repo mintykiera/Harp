@@ -1,28 +1,39 @@
-# Start with the official Node.js image, which has git pre-installed
-FROM node:20-slim
+# --- Stage 1: The "Builder" ---
+# This stage will clone the repo and download the LFS files.
+FROM node:20-slim AS builder
 
-# Install the git-lfs package
-RUN apt-get update && apt-get install -y git-lfs
+# Install our needed system packages
+RUN apt-get update && apt-get install -y git git-lfs
 
-# Set the working directory for our app
-WORKDIR /usr/src/app
+# Set the working directory
+WORKDIR /app
 
-# --- The "Build" Stage ---
-# Copy ONLY the files needed to install dependencies first. This is a Docker optimization.
-COPY package*.json ./
+# Clone the public repository into the current directory (.)
+RUN git clone https://github.com/mintykiera/MMKV.git .
+
+# Now that we are in a proper git repo, pull the LFS files
+RUN git lfs pull
+
+# Install npm dependencies
 RUN npm install
 
-# Now, copy ALL project files into the container. This includes your code,
-# the .git folder, the .gitattributes, and the LFS pointer files.
-COPY . .
+# --- Stage 2: The Final Application ---
+# This stage builds the lean, final image for running the bot.
+FROM node:20-slim
 
-# Run the LFS pull and chmod command INSIDE the Docker build.
-# This downloads the large binary and sets its permission.
-RUN git lfs pull && chmod +x stockfish
+WORKDIR /usr/src/app
 
-# --- The "Run" Stage ---
-# Expose the port your UptimeRobot pings (if you have one)
-EXPOSE 3000
+# Copy the package files from the builder stage
+COPY --from=builder /app/package*.json ./
+
+# Install ONLY production dependencies to keep the image small
+RUN npm install --omit=dev
+
+# Copy the rest of the application code AND the now-downloaded LFS files
+COPY --from=builder /app .
+
+# Re-apply the execute permission, just to be safe
+RUN chmod +x stockfish
 
 # Set the command to start the bot
 CMD ["npm", "start"]
