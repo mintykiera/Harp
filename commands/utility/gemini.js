@@ -6,30 +6,70 @@ const {
   ButtonStyle,
   ComponentType,
   MessageFlags,
+  AttachmentBuilder, // --- ADDED: Make sure this is imported ---
 } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_NAME = 'gemini-2.5-flash';
+const chatSessions = new Map();
+
+// --- NEW: A list of models to try, in order of preference ---
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-1.5-flash-latest', // Preferred, new and fast
+  'gemini-1.5-pro-latest',
+  'gemini-pro',
+];
+
 const generationConfig = {
   temperature: 0.9,
   maxOutputTokens: 8192,
 };
-const chatSessions = new Map();
 
-// --- REPLACED WITH THE FOOLPROOF SPLITTER ---
+// --- NEW: A robust function to generate content with model fallbacks ---
+async function generateWithFallback(prompt, history = []) {
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig,
+      });
+
+      let response;
+      let chat = null; // We only need to return the chat object for conversations
+
+      // If history is provided, it's a conversational chat
+      if (history.length > 0) {
+        chat = model.startChat({ history });
+        const result = await chat.sendMessage(prompt);
+        response = result.response;
+      } else {
+        // Otherwise, it's a one-off generation (like for the title)
+        const result = await model.generateContent(prompt);
+        response = result.response;
+      }
+
+      // If we get a successful response, return everything we need and stop trying.
+      console.log(`Successfully generated content with model: ${modelName}`);
+      return { response, chat, modelName };
+    } catch (error) {
+      console.warn(
+        `Model ${modelName} failed. Trying next model. Error:`,
+        error.message
+      );
+    }
+  }
+
+  throw new Error('All available Gemini models failed to generate a response.');
+}
+
 function splitText(text, { maxLength = 4096 } = {}) {
   if (text.length <= maxLength) return [text];
-
   const chunks = [];
   let currentChunk = '';
-
-  // Split by newlines to keep paragraphs and list items together
   const lines = text.split('\n');
-
   for (const line of lines) {
-    // If the current line itself is too long, we must split it by words
     if (line.length > maxLength) {
       const words = line.split(' ');
       for (const word of words) {
@@ -40,7 +80,6 @@ function splitText(text, { maxLength = 4096 } = {}) {
         currentChunk += `${word} `;
       }
     } else {
-      // If adding the next line would make the chunk too long, push the current chunk
       if (currentChunk.length + line.length + 1 > maxLength) {
         chunks.push(currentChunk.trim());
         currentChunk = '';
@@ -48,12 +87,9 @@ function splitText(text, { maxLength = 4096 } = {}) {
       currentChunk += `${line}\n`;
     }
   }
-
-  // Push the final remaining chunk
   if (currentChunk.trim() !== '') {
     chunks.push(currentChunk.trim());
   }
-
   return chunks;
 }
 
@@ -96,13 +132,16 @@ module.exports = {
     if (subcommand === 'end') {
       if (chatSessions.has(user.id)) {
         chatSessions.delete(user.id);
-        return interaction.reply(
-          '✅ Your conversation has ended and its memory has been cleared.'
-        );
+        return interaction.reply({
+          content:
+            '✅ Your conversation has ended and its memory has been cleared.',
+          flags: [MessageFlags.Ephemeral],
+        });
       } else {
-        return interaction.reply(
-          "You don't have an active conversation to end."
-        );
+        return interaction.reply({
+          content: "You don't have an active conversation to end.",
+          flags: [MessageFlags.Ephemeral],
+        });
       }
     }
 
@@ -110,23 +149,17 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      let chat;
-      let isNewChat = subcommand === 'start';
+      let chatHistory = [];
+      const isNewChat = subcommand === 'start';
 
-      if (isNewChat) {
-        const model = genAI.getGenerativeModel({
-          model: MODEL_NAME,
-          generationConfig,
-        });
-        chat = model.startChat({ history: [] });
-        chatSessions.set(user.id, chat);
-      } else {
+      if (!isNewChat) {
         if (!chatSessions.has(user.id)) {
           return interaction.editReply(
             "You don't have an active conversation. Please start one with `/gemini start <prompt>`."
           );
         }
-        chat = chatSessions.get(user.id);
+        // Get the history from the existing session to pass to the fallback function
+        chatHistory = (await chatSessions.get(user.id).getHistory()) || [];
       }
 
       let title = `> ${prompt.slice(0, 250)}${
@@ -134,28 +167,35 @@ module.exports = {
       }`;
 
       try {
-        // This block now runs for both 'start' and 'reply'
-        const titleGenModel = genAI.getGenerativeModel({ model: MODEL_NAME });
         const titlePrompt = `Generate a very short, 3-5 word title for the following user prompt. Return only the title text, nothing else. Prompt: "${prompt}"`;
-        const titleResult = await titleGenModel.generateContent(titlePrompt);
+        const titleResult = await generateWithFallback(titlePrompt);
         const potentialTitle = titleResult.response
           .text()
           .trim()
-          .replace(/["*]/g, ''); // Clean up any quotes or asterisks
+          .replace(/["*]/g, '');
 
-        // If we got a valid title from the AI, use it.
         if (potentialTitle) {
           title = potentialTitle;
         }
       } catch (titleError) {
         console.log(
           'Could not generate AI title, using prompt as fallback. Error:',
-          titleError
+          titleError.message
         );
       }
 
-      const result = await chat.sendMessage(prompt);
-      const response = await result.response;
+      // --- MODIFIED: Use the fallback function to get the main response ---
+      const {
+        response,
+        chat: updatedChat,
+        modelName,
+      } = await generateWithFallback(prompt, chatHistory);
+
+      // If it was a conversation, save the updated chat session
+      if (updatedChat) {
+        chatSessions.set(user.id, updatedChat);
+      }
+
       const text = response.text();
 
       if (!text) {
@@ -166,21 +206,20 @@ module.exports = {
 
       const attachments = [];
       const codeBlockRegex = /```([\s\S]*?)```/g;
-      const largeCodeBlocks = text
+      let processedText = text;
+      const largeCodeBlocks = processedText
         .match(codeBlockRegex)
         ?.filter((block) => block.length > 4000);
 
       if (largeCodeBlocks) {
         for (let i = 0; i < largeCodeBlocks.length; i++) {
           const block = largeCodeBlocks[i];
-          // Remove the block from the main text to be sent in embeds
-          text = text.replace(
+          processedText = processedText.replace(
             block,
             `\n[--- A large code block was sent as a file: code_block_${
               i + 1
             }.md ---]\n`
           );
-          // Add it as a file attachment
           attachments.push(
             new AttachmentBuilder(Buffer.from(block), {
               name: `code_block_${i + 1}.md`,
@@ -189,12 +228,12 @@ module.exports = {
         }
       }
 
-      // This will now work correctly!
-      const responseChunks = splitText(text);
+      const responseChunks = splitText(processedText);
 
       const temperatureToDisplay = generationConfig.temperature.toFixed(1);
       const tokenCount = response.usageMetadata?.totalTokenCount ?? 'N/A';
-      const baseFooterText = `Model: ${MODEL_NAME} | Temp: ${temperatureToDisplay} | Tokens: ${tokenCount}`;
+      // --- MODIFIED: Use the actual model name that succeeded ---
+      const baseFooterText = `Model: ${modelName} | Temp: ${temperatureToDisplay} | Tokens: ${tokenCount}`;
 
       let currentPage = 0;
 
@@ -236,12 +275,12 @@ module.exports = {
         value: `> ${prompt.slice(0, 1020)}`,
       });
 
-      const message = await interaction.editReply({
+      await interaction.editReply({
         embeds: [initialEmbed],
         components: initialComponents,
+        files: attachments,
       });
 
-      // The rest of your pagination logic is perfect and will now be triggered correctly.
       if (responseChunks.length <= 1) return;
 
       const collector = message.createMessageComponentCollector({
@@ -256,10 +295,8 @@ module.exports = {
             flags: [MessageFlags.Ephemeral],
           });
         }
-
         if (i.customId === 'prev_page') currentPage--;
         else if (i.customId === 'next_page') currentPage++;
-
         await i.update({
           embeds: [generateEmbed(currentPage)],
           components: [generateButtons(currentPage)],
@@ -279,11 +316,10 @@ module.exports = {
           .catch(() => {});
       });
     } catch (error) {
-      // ... (Your error handling is perfect) ...
       console.error('Error with Gemini API:', error);
       const status = error.status || error.code;
       let errorMessage =
-        'Sorry, something went wrong while talking to the AI. Please try again later.';
+        'Sorry, all available AI models failed to respond. Please try again later.';
 
       if (status === 503) {
         errorMessage =
