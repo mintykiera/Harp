@@ -7,20 +7,15 @@ RUN apt-get update && apt-get install -y curl unzip
 # Set the working directory for our app
 WORKDIR /usr/src/app
 
-# --- This is the new "Download Binaries" stage ---
-# Download and set up the Linux version of Stockfish
-RUN curl -L -o stockfish.zip "https://stockfishchess.org/files/stockfish-windows-x86-64-avx2.zip" && \
+# --- Download ONLY the Linux Stockfish ---
+# We only need the Linux version for our Linux container.
+RUN curl -L -A "Mozilla/5.0" -o stockfish.zip "https://stockfishchess.org/files/stockfish-ubuntu-x86-64-avx2.zip" && \
   unzip stockfish.zip && \
-  mv stockfish/stockfish-windows-x86-64-avx2.exe stockfish.exe && \
-  rm -rf stockfish stockfish.zip
-
-RUN curl -L -o stockfish_linux.zip "https://stockfishchess.org/files/stockfish-ubuntu-x86-64-avx2.zip" && \
-  unzip stockfish_linux.zip && \
-  mv stockfish/stockfish-ubuntu-x86-64-avx2 stockfish && \
+  mv stockfish-ubuntu-x86-64-avx2/stockfish-ubuntu-x86-64-avx2 stockfish && \
   chmod +x stockfish && \
-  rm -rf stockfish stockfish_linux.zip
+  rm stockfish.zip && \
+  rm -rf stockfish-ubuntu-x86-64-avx2
 # --- End of Download Stage ---
-
 
 # Copy package files for dependency installation
 COPY package*.json ./
