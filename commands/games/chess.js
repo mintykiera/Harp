@@ -1,4 +1,3 @@
-// ... (All require statements and top-level constants are the same) ...
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -37,8 +36,27 @@ function isChessMove(str) {
   return chessMoveRegex.test(str);
 }
 
+function formatLastMove(game) {
+  const history = game.history({ verbose: true });
+  if (history.length === 0) {
+    return 'None';
+  }
+
+  // Get the last move
+  const lastMove = history[history.length - 1];
+
+  // If it was white's move, we have a full pair
+  if (lastMove.color === 'w' && history.length > 1) {
+    const whiteMove = history[history.length - 2];
+    const blackMove = lastMove;
+    return `${whiteMove.lan.split('.')[0]}. ${whiteMove.san} ${blackMove.san}`;
+  }
+
+  // If it's the first move or an odd number of moves, just show white's move
+  return `${lastMove.lan.split('.')[0]}. ${lastMove.san}`;
+}
+
 module.exports = {
-  // ... (data section is correct) ...
   data: new SlashCommandBuilder()
     .setName('chess')
     .setDescription('Start a game of chess against the bot or another player.')
@@ -74,7 +92,6 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // ... (execute logic is correct) ...
     if (activeGames.has(interaction.channelId)) {
       return interaction.reply({
         content: 'A game is already in progress in this channel!',
@@ -198,7 +215,6 @@ module.exports = {
 };
 
 async function startGame(interaction, gameType, options) {
-  // ... (startGame setup is correct) ...
   const channelId = interaction.channelId;
   const game = new Chess();
   const chosenColor = interaction.options.getString('color') || 'random';
@@ -206,7 +222,8 @@ async function startGame(interaction, gameType, options) {
   let gameData = {
     game,
     gameType,
-    lastMove: 'None',
+    // --- CHANGE: Use the new formatting function here as well ---
+    lastMove: formatLastMove(game),
     playerWhite: null,
     playerBlack: null,
   };
@@ -242,22 +259,17 @@ async function startGame(interaction, gameType, options) {
 
     gameData.engine = spawn(stockfishPath);
 
-    // --- FIX & DEBUG ---
-    // 1. Add a listener to see EVERYTHING stockfish says.
+    // --- CHANGE: Remove the noisy debug listener ---
     // gameData.engine.stdout.on('data', (data) => {
     //   console.log(`[DEBUG] Stockfish says: ${data}`);
     // });
 
-    // 2. Send the required UCI handshake command first.
     gameData.engine.stdin.write('uci\n');
-
-    // 3. Then, set the difficulty.
     gameData.engine.stdin.write(
       `setoption name Skill Level value ${
         difficultyLevels[options.difficulty]
       }\n`
     );
-
     gameData.engine.on('error', (err) =>
       console.error('Stockfish engine error:', err)
     );
@@ -266,7 +278,6 @@ async function startGame(interaction, gameType, options) {
   activeGames.set(channelId, gameData);
 
   const createEmbed = (endReason = null) => {
-    // ... (createEmbed logic is correct) ...
     const turn = game.turn();
     const currentPlayer =
       turn === 'w' ? gameData.playerWhite : gameData.playerBlack;
@@ -324,7 +335,7 @@ async function startGame(interaction, gameType, options) {
       .setFooter({ text: `FEN: ${game.fen()}` });
   };
 
-  await wait(2000); // Wait for initial board image
+  await wait(2000);
 
   if (gameType === 'pvp') {
     await interaction.editReply({
@@ -337,9 +348,7 @@ async function startGame(interaction, gameType, options) {
   }
 
   const makeBotMove = () => {
-    // ... (makeBotMove logic is correct) ...
     return new Promise((resolve) => {
-      console.log(`[DEBUG] Sending to Stockfish: position fen ${game.fen()}`);
       gameData.engine.stdin.write(`position fen ${game.fen()}\n`);
       gameData.engine.stdin.write(`go movetime 1500\n`);
 
@@ -349,8 +358,11 @@ async function startGame(interaction, gameType, options) {
         if (bestMoveLine) {
           const bestMove = bestMoveLine.split(' ')[1];
           if (bestMove && bestMove !== '(none)') {
-            const moveResult = game.move(bestMove, { sloppy: true });
-            gameData.lastMove = `Bot: \`${moveResult.san}\``;
+            // --- CHANGE: Log the best move clearly ---
+            console.log(`Stockfish calculated best move: ${bestMove}`);
+            game.move(bestMove, { sloppy: true });
+            // --- CHANGE: Use the new formatting function ---
+            gameData.lastMove = formatLastMove(game);
           }
           gameData.engine.stdout.removeListener('data', onData);
           resolve();
@@ -366,7 +378,7 @@ async function startGame(interaction, gameType, options) {
     gameData.playerWhite.id === interaction.client.user.id
   ) {
     await makeBotMove();
-    await wait(2000); // Wait for bot's move image
+    await wait(2000);
     await interaction.editReply({
       embeds: [createEmbed(game.isGameOver() ? 'checkmate' : null)],
     });
@@ -386,7 +398,6 @@ async function startGame(interaction, gameType, options) {
     const userInput = message.content.trim();
     const command = userInput.toLowerCase();
 
-    // --- FIX: Message deletion now includes draw and takeback ---
     if (
       command === 'resign' ||
       command === 'draw' ||
@@ -399,7 +410,6 @@ async function startGame(interaction, gameType, options) {
     if (command === 'resign')
       return messageCollector.stop(message.author.username);
 
-    // --- RE-IMPLEMENTED: Draw command logic ---
     if (command === 'draw') {
       if (gameType === 'pve') {
         return interaction.followUp({
@@ -480,10 +490,8 @@ async function startGame(interaction, gameType, options) {
         if (res.customId === 'accept_takeback') {
           game.undo();
           game.undo();
-          gameData.lastMove =
-            game.history().length > 0
-              ? game.history({ verbose: true }).slice(-1)[0].san
-              : 'None';
+          // --- CHANGE: Use the new formatting function ---
+          gameData.lastMove = formatLastMove(game);
           await interaction.editReply({ embeds: [createEmbed()] });
           await res.update({ content: 'Takeback accepted.', components: [] });
         } else {
@@ -502,14 +510,13 @@ async function startGame(interaction, gameType, options) {
     }
 
     if (isChessMove(userInput)) {
-      let move = null;
       try {
-        move = game.move(userInput, { sloppy: true });
+        game.move(userInput, { sloppy: true });
       } catch (e1) {
         try {
           const capitalizedMove =
             userInput.charAt(0).toUpperCase() + userInput.slice(1);
-          move = game.move(capitalizedMove, { sloppy: true });
+          game.move(capitalizedMove, { sloppy: true });
         } catch (e2) {
           return interaction.followUp({
             content: `\`${userInput}\` is not a valid move.`,
@@ -518,7 +525,8 @@ async function startGame(interaction, gameType, options) {
         }
       }
 
-      gameData.lastMove = `${message.author.username}: \`${move.san}\``;
+      // --- CHANGE: Use the new formatting function ---
+      gameData.lastMove = formatLastMove(game);
 
       if (game.isGameOver()) return messageCollector.stop('gameover');
 
@@ -528,7 +536,6 @@ async function startGame(interaction, gameType, options) {
         await makeBotMove();
         if (game.isGameOver()) return messageCollector.stop('gameover');
 
-        // --- FIX: Delay is ONLY before the bot's reply with the new board ---
         await wait(2000);
         await interaction.editReply({ embeds: [createEmbed()] });
       }
@@ -551,7 +558,7 @@ async function startGame(interaction, gameType, options) {
 
     const finalEmbed = createEmbed(endReason);
 
-    await wait(2000); // Final delay for final board image
+    await wait(2000);
     interaction
       .editReply({ embeds: [finalEmbed], components: [] })
       .catch(() => {});
