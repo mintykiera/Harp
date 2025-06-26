@@ -11,10 +11,10 @@ COPY stockfish-ubuntu-x86-64-avx2.tar .
 
 # Extract the archive, move the binary, make it executable, and clean up
 RUN tar -xf stockfish-ubuntu-x86-64-avx2.tar && \
-  mv stockfish/stockfish-ubuntu-x86-64-avx2 stockfish && \
-  chmod +x stockfish && \
+  mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish && \
+  chmod +x ./stockfish && \
   rm stockfish-ubuntu-x86-64-avx2.tar && \
-  rm -rf stockfish/
+  rm -rf stockfish
 
 # Copy dependency files and install
 COPY package*.json ./
