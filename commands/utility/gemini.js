@@ -158,7 +158,6 @@ module.exports = {
             "You don't have an active conversation. Please start one with `/gemini start <prompt>`."
           );
         }
-        // Get the history from the existing session to pass to the fallback function
         chatHistory = (await chatSessions.get(user.id).getHistory()) || [];
       }
 
@@ -184,14 +183,12 @@ module.exports = {
         );
       }
 
-      // --- MODIFIED: Use the fallback function to get the main response ---
       const {
         response,
         chat: updatedChat,
         modelName,
       } = await generateWithFallback(prompt, chatHistory);
 
-      // If it was a conversation, save the updated chat session
       if (updatedChat) {
         chatSessions.set(user.id, updatedChat);
       }
@@ -229,16 +226,14 @@ module.exports = {
       }
 
       const responseChunks = splitText(processedText);
-
       const temperatureToDisplay = generationConfig.temperature.toFixed(1);
       const tokenCount = response.usageMetadata?.totalTokenCount ?? 'N/A';
-      // --- MODIFIED: Use the actual model name that succeeded ---
       const baseFooterText = `Model: ${modelName} | Temp: ${temperatureToDisplay} | Tokens: ${tokenCount}`;
-
       let currentPage = 0;
 
+      // --- CHANGE: Make generateEmbed smarter ---
       const generateEmbed = (page) => {
-        return new EmbedBuilder()
+        const embed = new EmbedBuilder()
           .setColor(isNewChat ? '#00FF00' : '#0099FF')
           .setTitle(title)
           .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
@@ -249,6 +244,16 @@ module.exports = {
               responseChunks.length
             }`,
           });
+
+        // Conditionally add the prompt field ONLY for the first page
+        if (page === 0) {
+          embed.addFields({
+            name: 'Your Prompt',
+            value: `> ${prompt.slice(0, 1020)}`,
+          });
+        }
+
+        return embed;
       };
 
       const generateButtons = (page) => {
@@ -266,16 +271,15 @@ module.exports = {
         );
       };
 
+      // --- CHANGE: The redundant addFields call is no longer needed ---
       const initialEmbed = generateEmbed(currentPage);
       const initialComponents =
         responseChunks.length > 1 ? [generateButtons(currentPage)] : [];
 
-      initialEmbed.addFields({
-        name: 'Your Prompt',
-        value: `> ${prompt.slice(0, 1020)}`,
-      });
+      // The line `initialEmbed.addFields(...)` has been removed from here.
 
-      await interaction.editReply({
+      // Send the first reply
+      const message = await interaction.editReply({
         embeds: [initialEmbed],
         components: initialComponents,
         files: attachments,
@@ -297,6 +301,8 @@ module.exports = {
         }
         if (i.customId === 'prev_page') currentPage--;
         else if (i.customId === 'next_page') currentPage++;
+
+        // This will now correctly generate the embed with or without the prompt field
         await i.update({
           embeds: [generateEmbed(currentPage)],
           components: [generateButtons(currentPage)],
@@ -316,6 +322,7 @@ module.exports = {
           .catch(() => {});
       });
     } catch (error) {
+      // ... (error handling is the same) ...
       console.error('Error with Gemini API:', error);
       const status = error.status || error.code;
       let errorMessage =
