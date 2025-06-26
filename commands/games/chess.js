@@ -15,12 +15,11 @@ const os = require('os');
 const isWindows = os.platform() === 'win32';
 
 const stockfishPath = isWindows
-  ? path.join(__dirname, 'stockfish.exe') // For local Windows dev
+  ? path.join(__dirname, '..', '..', 'stockfish.exe') // For local Windows dev
   : '/usr/src/app/stockfish_bin'; // For Render
 
 console.log(`[DEBUG] Using stockfish path: ${stockfishPath}`);
 
-const { spawn } = require('child_process');
 const engine = spawn(stockfishPath);
 
 const activePlayers = new Set();
