@@ -12,11 +12,20 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const isWindows = os.platform() === 'win32';
+
+const stockfishPath = isWindows
+  ? path.join(__dirname, 'stockfish.exe') // For local Windows dev
+  : '/usr/src/app/stockfish_bin'; // For Render
+
+console.log(`[DEBUG] Using stockfish path: ${stockfishPath}`);
+
+const { spawn } = require('child_process');
+const engine = spawn(stockfishPath);
+
 const activePlayers = new Set();
 const activeGames = new Map();
-const stockfishFile =
-  os.platform() === 'win32' ? 'stockfish.exe' : 'stockfish_bin';
-const stockfishPath = path.join(__dirname, '..', '..', 'stockfish');
+
 const difficultyLevels = {
   rookie: 1,
   intermediate: 5,
