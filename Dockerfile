@@ -7,14 +7,17 @@ RUN apt-get update && apt-get install -y curl unzip
 # Set the working directory for our app
 WORKDIR /usr/src/app
 
-# --- Download ONLY the Linux Stockfish ---
-# We only need the Linux version for our Linux container.
-RUN curl -L -A "Mozilla/5.0" -o stockfish.zip "https://stockfishchess.org/files/stockfish-ubuntu-x86-64-avx2.zip" && \
+# --- Download Stockfish from the official GitHub Releases ---
+# This is a much more reliable source for automated downloads.
+# We are using version 16.1 here.
+RUN curl -L -o stockfish.zip "https://github.com/official-stockfish/Stockfish/releases/download/sf_16.1/stockfish-ubuntu-x86-64-avx2.zip" && \
   unzip stockfish.zip && \
-  mv stockfish-ubuntu-x86-64-avx2/stockfish-ubuntu-x86-64-avx2 stockfish && \
+  # The binary is inside a folder named 'stockfish' after unzipping
+  mv stockfish/stockfish-ubuntu-x86-64-avx2 stockfish && \
   chmod +x stockfish && \
+  # Clean up the downloaded zip and the empty folder
   rm stockfish.zip && \
-  rm -rf stockfish-ubuntu-x86-64-avx2
+  rm -rf stockfish
 # --- End of Download Stage ---
 
 # Copy package files for dependency installation
