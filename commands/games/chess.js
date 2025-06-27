@@ -489,9 +489,11 @@ module.exports = {
         let resultType;
         if (reason.result === 'checkmate')
           resultType = game.turn() === 'b' ? 'white' : 'black';
-        else if (reason.result === 'resign')
-          resultType = white.username === reason.user ? 'black' : 'white';
-        else resultType = 'draw';
+        else if (reason.result === 'resign') {
+          if (reason.user === white.username) resultType = 'black';
+          else if (reason.user === black.username) resultType = 'white';
+          else resultType = 'draw'; // fallback, unlikely
+        }
 
         if (resultType !== 'draw') {
           const { newWhiteElo, newBlackElo } = await calculateElo(

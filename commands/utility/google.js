@@ -53,7 +53,6 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // --- THE FIX: Defer first, think later ---
     await interaction.deferReply();
 
     if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
@@ -65,7 +64,6 @@ module.exports = {
 
     const query = interaction.options.getString('query');
 
-    // Now it's safe for this to take time
     try {
       await User.findOneAndUpdate(
         { userId: interaction.user.id },
@@ -140,29 +138,46 @@ module.exports = {
       });
 
       collector.on('collect', async (i) => {
-        if (i.user.id !== interaction.user.id) {
-          return i.reply({
-            content: 'Only the command user can use these buttons.',
-            flags: [MessageFlags.Ephemeral],
-          });
-        }
-        await i.deferUpdate();
-        const isNext = i.customId === 'next_page';
-        currentPage += isNext ? 1 : -1;
-        const needsFetch =
-          isNext &&
-          currentPage * 10 >= allResults.length &&
-          allResults.length < MAX_RESULTS;
-        if (needsFetch) {
-          const newResults = await fetchGoogleResults(
-            query,
-            allResults.length + 1
-          );
-          if (newResults) {
-            allResults.push(...newResults);
+        try {
+          if (i.user.id !== interaction.user.id) {
+            return i.reply({
+              content: 'Only the command user can use these buttons.',
+              flags: MessageFlags.Ephemeral,
+            });
+          }
+
+          await i.deferUpdate();
+
+          const isNext = i.customId === 'next_page';
+          currentPage += isNext ? 1 : -1;
+
+          const needsFetch =
+            isNext &&
+            currentPage * 10 >= allResults.length &&
+            allResults.length < MAX_RESULTS;
+
+          if (needsFetch) {
+            const newResults = await fetchGoogleResults(
+              query,
+              allResults.length + 1
+            );
+            if (newResults && newResults.length > 0) {
+              allResults.push(...newResults);
+            }
+          }
+
+          await i.message.edit(generatePayload(currentPage));
+        } catch (err) {
+          console.error('Button interaction error:', err);
+          try {
+            await i.followUp({
+              content: 'Something went wrong while updating the page.',
+              flags: MessageFlags.Ephemeral,
+            });
+          } catch (followUpErr) {
+            console.error('Failed to follow up after error:', followUpErr);
           }
         }
-        await i.editReply(generatePayload(currentPage));
       });
 
       collector.on('end', () => {
