@@ -20,7 +20,7 @@ const stockfishPath = isWindows
 
 console.log(`[DEBUG] Using stockfish path: ${stockfishPath}`);
 
-const engine = spawn(stockfishPath);
+// const engine = spawn(stockfishPath);
 
 const activePlayers = new Set();
 const activeGames = new Map();
@@ -424,7 +424,7 @@ async function startGame(interaction, gameType, options) {
         });
       }
       const opponent =
-        player.id === gameData.playerWhite.id
+        message.author.id === gameData.playerWhite.id // Use message.author here
           ? gameData.playerBlack
           : gameData.playerWhite;
       const row = new ActionRowBuilder().addComponents(
@@ -471,7 +471,7 @@ async function startGame(interaction, gameType, options) {
         });
       }
       const opponent =
-        player.id === gameData.playerWhite.id
+        message.author.id === gameData.playerWhite.id // Use message.author here
           ? gameData.playerBlack
           : gameData.playerWhite;
       const row = new ActionRowBuilder().addComponents(
