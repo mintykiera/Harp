@@ -25,19 +25,13 @@ async function fetchGoogleResults(query, start) {
       start,
     };
     const response = await axios.get(url, { params });
-    if (response.data.items) {
-      response.data.items.forEach(
-        (item) => (item.searchInformation = response.data.searchInformation)
-      );
-      return response.data.items;
-    }
-    return null;
+    return response.data.items || [];
   } catch (err) {
     console.error(
       'Error fetching from Google API:',
       err.response ? err.response.data : err.message
     );
-    return null;
+    return [];
   }
 }
 
@@ -64,11 +58,17 @@ module.exports = {
 
     const query = interaction.options.getString('query');
 
+    // Log search in user history
     try {
       await User.findOneAndUpdate(
         { userId: interaction.user.id },
         {
-          $push: { searchHistory: { $each: [{ query }], $slice: -25 } },
+          $push: {
+            searchHistory: {
+              $each: [{ query, timestamp: new Date() }],
+              $slice: -25,
+            },
+          },
           $setOnInsert: { username: interaction.user.username },
         },
         { upsert: true }
@@ -77,121 +77,104 @@ module.exports = {
       console.error('Failed to log Google search to DB:', dbError);
     }
 
-    try {
-      let allResults = [];
-      const initialResponse = await fetchGoogleResults(query, 1);
+    // Fetch first batch of results
+    let allResults = await fetchGoogleResults(query, 1);
 
-      if (!initialResponse || initialResponse.length === 0) {
-        return interaction.editReply(`No results found for "${query}".`);
-      }
-      allResults = allResults.concat(initialResponse);
+    if (allResults.length === 0) {
+      return interaction.editReply(`No results found for **${query}**.`);
+    }
 
-      let currentPage = 0;
+    let currentPage = 0;
 
-      const generatePayload = (page) => {
-        const totalResults = initialResponse[0]?.searchInformation.totalResults
-          ? parseInt(initialResponse[0].searchInformation.totalResults)
-          : allResults.length;
-        const totalPages = Math.ceil(Math.min(totalResults, MAX_RESULTS) / 10);
-        const startIndex = page * 10;
-        const pageResults = allResults.slice(startIndex, startIndex + 10);
+    const generatePayload = (page) => {
+      const totalResults = Math.min(allResults.length, MAX_RESULTS);
+      const totalPages = Math.ceil(totalResults / 10);
+      const startIndex = page * 10;
+      const pageResults = allResults.slice(startIndex, startIndex + 10);
 
-        const embed = new EmbedBuilder()
-          .setColor('#4285F4')
-          .setTitle(`Search results for: "${query}"`)
-          .setFooter({ text: `Page ${page + 1} of ${totalPages}` })
-          .setTimestamp()
-          .setDescription(
-            pageResults
-              .map(
-                (result, index) =>
-                  `**${startIndex + index + 1}. [${result.title}](${
-                    result.link
-                  })**\n${result.snippet.replace(/\n/g, ' ')}`
-              )
-              .join('\n\n') || 'No more results.'
-          );
+      const embed = new EmbedBuilder()
+        .setColor('#4285F4')
+        .setTitle(`🔍 Search results for: "${query}"`)
+        .setDescription(
+          pageResults
+            .map(
+              (result, i) =>
+                `**${startIndex + i + 1}. [${result.title}](${
+                  result.link
+                })**\n${result.snippet}`
+            )
+            .join('\n\n')
+        )
+        .setFooter({ text: `Page ${page + 1} of ${totalPages}` })
+        .setTimestamp();
 
-        const buttons = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('prev_page')
-            .setLabel('◀')
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(page === 0),
-          new ButtonBuilder()
-            .setCustomId('next_page')
-            .setLabel('▶')
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(page === totalPages - 1)
-        );
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('prev_page')
+          .setLabel('◀')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(page === 0),
+        new ButtonBuilder()
+          .setCustomId('next_page')
+          .setLabel('▶')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(page >= totalPages - 1 || totalPages === 1)
+      );
 
-        return { embeds: [embed], components: totalPages > 1 ? [buttons] : [] };
+      return {
+        embeds: [embed],
+        components: totalPages > 1 ? [row] : [],
       };
+    };
 
-      const message = await interaction.editReply(generatePayload(currentPage));
+    const message = await interaction.editReply(generatePayload(currentPage));
 
-      if (allResults.length <= 10) return;
+    if (allResults.length <= 10) return;
 
-      const collector = message.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: 90_000,
-      });
+    const collector = message.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      time: 90_000,
+    });
 
-      collector.on('collect', async (i) => {
-        try {
-          if (i.user.id !== interaction.user.id) {
-            return i.reply({
-              content: 'Only the command user can use these buttons.',
-              flags: MessageFlags.Ephemeral,
-            });
-          }
+    collector.on('collect', async (i) => {
+      if (i.user.id !== interaction.user.id) {
+        return i.reply({
+          content:
+            'Only the person who used the command can interact with these buttons.',
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
 
-          await i.deferUpdate();
+      const isNext = i.customId === 'next_page';
+      currentPage += isNext ? 1 : -1;
 
-          const isNext = i.customId === 'next_page';
-          currentPage += isNext ? 1 : -1;
+      const needMoreResults =
+        isNext &&
+        currentPage * 10 >= allResults.length &&
+        allResults.length < MAX_RESULTS;
 
-          const needsFetch =
-            isNext &&
-            currentPage * 10 >= allResults.length &&
-            allResults.length < MAX_RESULTS;
+      if (needMoreResults) {
+        const nextBatch = await fetchGoogleResults(
+          query,
+          allResults.length + 1
+        );
+        allResults.push(...nextBatch);
+      }
 
-          if (needsFetch) {
-            const newResults = await fetchGoogleResults(
-              query,
-              allResults.length + 1
-            );
-            if (newResults && newResults.length > 0) {
-              allResults.push(...newResults);
-            }
-          }
+      const updatedPayload = generatePayload(currentPage);
+      await i.update(updatedPayload);
+    });
 
-          await i.message.edit(generatePayload(currentPage));
-        } catch (err) {
-          console.error('Button interaction error:', err);
-          try {
-            await i.followUp({
-              content: 'Something went wrong while updating the page.',
-              flags: MessageFlags.Ephemeral,
-            });
-          } catch (followUpErr) {
-            console.error('Failed to follow up after error:', followUpErr);
-          }
-        }
-      });
-
-      collector.on('end', () => {
-        const finalPayload = generatePayload(currentPage);
-        finalPayload.components.forEach((row) =>
+    collector.on('end', async () => {
+      try {
+        const disabled = generatePayload(currentPage);
+        disabled.components.forEach((row) =>
           row.components.forEach((btn) => btn.setDisabled(true))
         );
-        message.edit(finalPayload).catch(() => {});
-      });
-    } catch (error) {
-      console.error('Error in Google command:', error.message);
-      await interaction.editReply(
-        'Sorry, there was an error performing the search.'
-      );
-    }
+        await message.edit(disabled);
+      } catch (err) {
+        console.error('Failed to disable buttons after collector end:', err);
+      }
+    });
   },
 };
