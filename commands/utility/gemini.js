@@ -29,6 +29,10 @@ const generationConfig = {
 
 // --- NEW: A robust function to generate content with model fallbacks ---
 async function generateWithFallback(prompt, history = []) {
+  // This part is for the title generation, which is a true one-off request.
+  // We can identify it because it will never be called with a history array.
+  const isTitleGeneration = !Array.isArray(history);
+
   for (const modelName of GEMINI_MODELS) {
     try {
       const model = genAI.getGenerativeModel({
@@ -36,23 +40,25 @@ async function generateWithFallback(prompt, history = []) {
         generationConfig,
       });
 
-      let response;
-      let chat = null; // We only need to return the chat object for conversations
-
-      // If history is provided, it's a conversational chat
-      if (history.length > 0) {
-        chat = model.startChat({ history });
-        const result = await chat.sendMessage(prompt);
-        response = result.response;
-      } else {
-        // Otherwise, it's a one-off generation (like for the title)
+      // If history is not provided, it's a one-off generation (like for the title)
+      if (isTitleGeneration) {
         const result = await model.generateContent(prompt);
-        response = result.response;
+        console.log(`Successfully generated title with model: ${modelName}`);
+        // Return only what's needed for the title
+        return { response: result.response };
       }
 
-      // If we get a successful response, return everything we need and stop trying.
+      // For all conversational prompts (start and reply), ALWAYS start a chat.
+      // The SDK handles an empty history array correctly for new chats.
+      const chat = model.startChat({ history });
+      const result = await chat.sendMessage(prompt);
+      const response = result.response;
+
+      // If we get a successful response, return everything we need.
       console.log(`Successfully generated content with model: ${modelName}`);
       return { response, chat, modelName };
+
+      // --- END OF FIX ---
     } catch (error) {
       console.warn(
         `Model ${modelName} failed. Trying next model. Error:`,

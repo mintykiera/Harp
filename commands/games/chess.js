@@ -47,22 +47,18 @@ function isChessMove(str) {
 
 function formatLastMove(game) {
   const history = game.history({ verbose: true });
-  if (history.length === 0) {
-    return 'None';
-  }
 
-  // Get the last move
+  if (history.length === 0) return 'None';
+
+  const moveCount = Math.ceil(history.length / 2);
   const lastMove = history[history.length - 1];
 
-  // If it was white's move, we have a full pair
-  if (lastMove.color === 'w' && history.length > 1) {
+  if (lastMove.color === 'b') {
     const whiteMove = history[history.length - 2];
-    const blackMove = lastMove;
-    return `${whiteMove.lan.split('.')[0]}. ${whiteMove.san} ${blackMove.san}`;
+    return `${moveCount}. ${whiteMove.san}  :  ${lastMove.san}`;
   }
 
-  // If it's the first move or an odd number of moves, just show white's move
-  return `${lastMove.lan.split('.')[0]}. ${lastMove.san}`;
+  return `${moveCount}. ${lastMove.san}`;
 }
 
 module.exports = {
