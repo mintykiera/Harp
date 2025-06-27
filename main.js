@@ -88,17 +88,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } catch (error) {
-    console.error(error);
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content: 'There was an error while executing this command!',
-        flags: [MessageFlags.Ephemeral],
-      });
-    } else {
-      await interaction.reply({
-        content: 'There was an error while executing this command!',
-        flags: [MessageFlags.Ephemeral],
-      });
+    console.error(`[COMMAND ERROR] ${command.data.name}:`, error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'There was an error while executing this command!',
+          flags: [MessageFlags.Ephemeral],
+        });
+      } else {
+        // This may still error if already replied/followed up
+        await interaction.followUp({
+          content: 'There was an error while executing this command!',
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+    } catch (err) {
+      console.warn(
+        '[ERROR HANDLER] Could not send error message (already acknowledged). Suppressing.',
+        err
+      );
     }
   }
 });
