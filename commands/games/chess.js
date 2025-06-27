@@ -11,19 +11,13 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const Game = require('../../models/Game');
+const User = require('../../models/User');
 
 const isWindows = os.platform() === 'win32';
-
 const stockfishPath = isWindows
-  ? path.join(__dirname, '..', '..', 'stockfish.exe') // For local Windows dev
-  : '/usr/src/app/stockfish_bin'; // For Render
-
-console.log(`[DEBUG] Using stockfish path: ${stockfishPath}`);
-
-// const engine = spawn(stockfishPath);
-
-const activePlayers = new Set();
-const activeGames = new Map();
+  ? path.join(__dirname, '..', '..', 'stockfish.exe')
+  : '/usr/src/app/stockfish_bin';
 
 const difficultyLevels = {
   rookie: 1,
@@ -32,7 +26,9 @@ const difficultyLevels = {
   professional: 15,
   grandmaster: 20,
 };
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const activePveEngines = new Map();
+const gameCollectors = new Map();
 
 function getBoardImageUrl(fen) {
   const boardOnly = fen.split(' ')[0];
@@ -47,35 +43,206 @@ function isChessMove(str) {
 
 function formatLastMove(game) {
   const history = game.history({ verbose: true });
-
   if (history.length === 0) return 'None';
-
   const moveCount = Math.ceil(history.length / 2);
   const lastMove = history[history.length - 1];
-
-  if (lastMove.color === 'b') {
+  if (lastMove.color === 'b' && history.length > 1) {
     const whiteMove = history[history.length - 2];
-    return `${moveCount}. ${whiteMove.san}  :  ${lastMove.san}`;
+    return `${moveCount}. ${whiteMove.san} : ${lastMove.san}`;
+  }
+  return `${moveCount}. ${lastMove.san}`;
+}
+
+async function updateUserProfile(user) {
+  return User.findOneAndUpdate(
+    { userId: user.id },
+    { username: user.username },
+    { upsert: true, new: true }
+  );
+}
+
+async function calculateElo(white, black, result) {
+  const K = 32;
+  const whiteExpected = 1 / (1 + 10 ** ((black.elo - white.elo) / 400));
+  const blackExpected = 1 - whiteExpected;
+  let whiteScore, blackScore;
+  if (result === 'white') {
+    [whiteScore, blackScore] = [1, 0];
+  } else if (result === 'black') {
+    [whiteScore, blackScore] = [0, 1];
+  } else {
+    [whiteScore, blackScore] = [0.5, 0.5];
+  }
+  const newWhiteElo = Math.round(white.elo + K * (whiteScore - whiteExpected));
+  const newBlackElo = Math.round(black.elo + K * (blackScore - blackExpected));
+  return { newWhiteElo, newBlackElo };
+}
+
+function createEmbed(game, gameDoc, endReason = null) {
+  const turn = game.turn();
+  const { playerWhiteUsername, playerBlackUsername } = gameDoc;
+  const currentPlayerUsername =
+    turn === 'w' ? playerWhiteUsername : playerBlackUsername;
+  let description, status;
+
+  if (endReason) {
+    const winnerUsername =
+      turn === 'w' ? playerBlackUsername : playerWhiteUsername;
+    switch (endReason.result) {
+      case 'checkmate':
+        description = `**Checkmate!** ${winnerUsername} wins.`;
+        status = 'Checkmate!';
+        break;
+      case 'stalemate':
+        description = '**Stalemate!** The game is a draw.';
+        status = 'Draw';
+        break;
+      case 'repetition':
+        description = '**Draw** by threefold repetition.';
+        status = 'Draw';
+        break;
+      case 'insufficient':
+        description = '**Draw** due to insufficient material.';
+        status = 'Draw';
+        break;
+      case 'idle':
+        description = '**Game ended due to inactivity.**';
+        status = 'Timed Out';
+        break;
+      default:
+        description = `**${endReason.user} has resigned.** ${winnerUsername} wins!`;
+        status = 'Resigned';
+    }
+  } else {
+    description = `It's **${currentPlayerUsername}**'s turn (${
+      turn === 'w' ? 'White' : 'Black'
+    }).\nMake a move (e.g., \`e4\`), or type \`resign\`.`;
+    status = game.inCheck() ? 'Check!' : 'In Progress';
   }
 
-  return `${moveCount}. ${lastMove.san}`;
+  return new EmbedBuilder()
+    .setColor('#744c2c')
+    .setTitle(
+      `${playerWhiteUsername} (White) vs. ${playerBlackUsername} (Black)`
+    )
+    .setDescription(description)
+    .setImage(getBoardImageUrl(game.fen()))
+    .addFields(
+      { name: 'Last Move', value: formatLastMove(game), inline: true },
+      { name: 'Status', value: status, inline: true }
+    )
+    .setFooter({ text: `FEN: ${game.fen()}` });
+}
+
+function makeBotMove(game, channelId) {
+  return new Promise((resolve) => {
+    const engine = activePveEngines.get(channelId);
+    if (!engine) return resolve();
+    engine.stdin.write(`position fen ${game.fen()}\n`);
+    engine.stdin.write(`go movetime 1500\n`);
+
+    const onData = (data) => {
+      const bestMove = data.toString().match(/bestmove\s+(\S+)/)?.[1];
+      if (bestMove && bestMove !== '(none)') {
+        game.move(bestMove, { sloppy: true });
+        engine.stdout.removeListener('data', onData);
+        resolve();
+      }
+    };
+    engine.stdout.on('data', onData);
+  });
+}
+
+async function startGame(interaction, gameType, options) {
+  const channelId = interaction.channelId;
+  const chosenColor = interaction.options.getString('color') || 'random';
+  let playerWhite, playerBlack;
+
+  if (gameType === 'pvp') {
+    const { challenger, opponent } = options;
+    await Promise.all([
+      updateUserProfile(challenger),
+      updateUserProfile(opponent),
+    ]);
+    if (chosenColor === 'white')
+      [playerWhite, playerBlack] = [challenger, opponent];
+    else if (chosenColor === 'black')
+      [playerWhite, playerBlack] = [opponent, challenger];
+    else
+      [playerWhite, playerBlack] =
+        Math.random() > 0.5 ? [challenger, opponent] : [opponent, challenger];
+  } else {
+    const player = interaction.user;
+    await updateUserProfile(player);
+    const botUser = {
+      username: `Harp (${options.difficulty})`,
+      id: interaction.client.user.id,
+    };
+    if (chosenColor === 'white') [playerWhite, playerBlack] = [player, botUser];
+    else if (chosenColor === 'black')
+      [playerWhite, playerBlack] = [botUser, player];
+    else
+      [playerWhite, playerBlack] =
+        Math.random() > 0.5 ? [player, botUser] : [botUser, player];
+
+    const engine = spawn(stockfishPath);
+    engine.stdin.write('uci\n');
+    engine.stdin.write(
+      `setoption name Skill Level value ${
+        difficultyLevels[options.difficulty]
+      }\n`
+    );
+    engine.on('error', (err) => console.error('Stockfish engine error:', err));
+    activePveEngines.set(channelId, engine);
+  }
+
+  const initialContent =
+    gameType === 'pvp'
+      ? `Game started! ${playerWhite.username} is White.`
+      : ' ';
+  const sentMessage = await interaction.editReply({
+    content: initialContent,
+    embeds: [new EmbedBuilder().setTitle('Setting up game...')],
+  });
+
+  const gameDoc = await Game.create({
+    channelId,
+    messageId: sentMessage.id,
+    gameType,
+    playerWhiteId: playerWhite.id,
+    playerWhiteUsername: playerWhite.username,
+    playerBlackId: playerBlack.id,
+    playerBlackUsername: playerBlack.username,
+  });
+
+  const game = new Chess(gameDoc.fen);
+  await sentMessage.edit({
+    embeds: [createEmbed(game, gameDoc)],
+    content: initialContent || null,
+  });
+
+  if (
+    gameType === 'pve' &&
+    game.turn() === 'w' &&
+    playerWhite.id === interaction.client.user.id
+  ) {
+    await makeBotMove(game, channelId);
+    await Game.updateOne({ channelId }, { fen: game.fen() });
+    await sentMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
+  }
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('chess')
-    .setDescription('Start a game of chess against the bot or another player.')
+    .setDescription('Start a game of chess.')
     .addUserOption((option) =>
-      option
-        .setName('opponent')
-        .setDescription('Select a player to challenge to a match.')
-        .setRequired(false)
+      option.setName('opponent').setDescription('Challenge a player.')
     )
     .addStringOption((option) =>
       option
         .setName('difficulty')
-        .setDescription('If playing the bot, choose its difficulty.')
-        .setRequired(false)
+        .setDescription('Choose bot difficulty.')
         .addChoices(
           { name: 'Rookie', value: 'rookie' },
           { name: 'Intermediate', value: 'intermediate' },
@@ -87,8 +254,7 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('color')
-        .setDescription('Choose which color you want to play as.')
-        .setRequired(false)
+        .setDescription('Choose your color.')
         .addChoices(
           { name: 'White', value: 'white' },
           { name: 'Black', value: 'black' },
@@ -97,13 +263,19 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    if (activeGames.has(interaction.channelId)) {
+    if (await Game.findOne({ channelId: interaction.channelId })) {
       return interaction.reply({
         content: 'A game is already in progress in this channel!',
         flags: [MessageFlags.Ephemeral],
       });
     }
-    if (activePlayers.has(interaction.user.id)) {
+    const playerInGame = await Game.findOne({
+      $or: [
+        { playerWhiteId: interaction.user.id },
+        { playerBlackId: interaction.user.id },
+      ],
+    });
+    if (playerInGame) {
       return interaction.reply({
         content: 'You are already in a game in another channel!',
         flags: [MessageFlags.Ephemeral],
@@ -112,30 +284,18 @@ module.exports = {
 
     const challenger = interaction.user;
     const opponent = interaction.options.getUser('opponent');
-    const difficulty = interaction.options.getString('difficulty');
-
-    if (opponent && difficulty) {
-      return interaction.reply({
-        content:
-          'You cannot select a difficulty when challenging a player. Please choose one or the other.',
-        flags: [MessageFlags.Ephemeral],
-      });
-    }
 
     if (opponent) {
-      if (opponent.bot) {
+      if (opponent.bot || opponent.id === challenger.id) {
         return interaction.reply({
-          content: "You can't challenge a bot.",
+          content: "You can't challenge bots or yourself.",
           flags: [MessageFlags.Ephemeral],
         });
       }
-      if (opponent.id === challenger.id) {
-        return interaction.reply({
-          content: "You can't challenge yourself!",
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-      if (activePlayers.has(opponent.id)) {
+      const opponentInGame = await Game.findOne({
+        $or: [{ playerWhiteId: opponent.id }, { playerBlackId: opponent.id }],
+      });
+      if (opponentInGame) {
         return interaction.reply({
           content: `${opponent.username} is already in a game!`,
           flags: [MessageFlags.Ephemeral],
@@ -152,8 +312,7 @@ module.exports = {
           .setLabel('Decline')
           .setStyle(ButtonStyle.Danger)
       );
-
-      await interaction.reply({
+      const challengeMessage = await interaction.reply({
         content: `${opponent}`,
         embeds: [
           new EmbedBuilder()
@@ -165,15 +324,13 @@ module.exports = {
         ],
         components: [row],
       });
-
       try {
-        const response = await interaction.channel.awaitMessageComponent({
+        const response = await challengeMessage.awaitMessageComponent({
           filter: (i) =>
             i.user.id === opponent.id &&
             (i.customId === 'accept_chess' || i.customId === 'decline_chess'),
           time: 60000,
         });
-
         if (response.customId === 'decline_chess') {
           return response.update({
             content: 'The challenge was declined.',
@@ -181,392 +338,173 @@ module.exports = {
             components: [],
           });
         }
-
-        await response.deferUpdate();
-        startGame(interaction, 'pvp', { challenger, opponent });
+        await response.update({
+          content: 'Challenge accepted! Setting up the game...',
+          embeds: [],
+          components: [],
+        });
+        await startGame(interaction, 'pvp', { challenger, opponent });
       } catch (err) {
-        try {
-          await interaction.editReply({
+        await interaction
+          .editReply({
             content: 'The challenge expired.',
             embeds: [],
             components: [],
-          });
-        } catch (error) {
-          if (error.code !== 10008)
-            console.error('Error editing expired challenge:', error);
-        }
+          })
+          .catch(() => {});
       }
     } else {
+      const difficulty = interaction.options.getString('difficulty');
       if (!difficulty) {
         return interaction.reply({
           content: 'You must select a difficulty when playing against the bot.',
           flags: [MessageFlags.Ephemeral],
         });
       }
-      if (!stockfishPath || !fs.existsSync(stockfishPath)) {
-        console.log('[DEBUG] Looking for Stockfish at:', stockfishPath);
-        console.error(
-          `FATAL: stockfish.exe not found at path: ${stockfishPath}`
-        );
+      if (!fs.existsSync(stockfishPath)) {
         return interaction.reply({
-          content: 'Error: The chess engine is not configured correctly.',
+          content: 'Error: The chess engine is not configured.',
           flags: [MessageFlags.Ephemeral],
         });
       }
-
       await interaction.deferReply();
-      startGame(interaction, 'pve', { difficulty });
+      await startGame(interaction, 'pve', { difficulty });
     }
   },
-};
 
-async function startGame(interaction, gameType, options) {
-  const channelId = interaction.channelId;
-  const game = new Chess();
-  const chosenColor = interaction.options.getString('color') || 'random';
-
-  let gameData = {
-    game,
-    gameType,
-    // --- CHANGE: Use the new formatting function here as well ---
-    lastMove: formatLastMove(game),
-    playerWhite: null,
-    playerBlack: null,
-  };
-
-  if (gameType === 'pvp') {
-    const { challenger, opponent } = options;
-    if (chosenColor === 'white')
-      [gameData.playerWhite, gameData.playerBlack] = [challenger, opponent];
-    else if (chosenColor === 'black')
-      [gameData.playerWhite, gameData.playerBlack] = [opponent, challenger];
-    else
-      [gameData.playerWhite, gameData.playerBlack] =
-        Math.random() > 0.5 ? [challenger, opponent] : [opponent, challenger];
-
-    activePlayers.add(challenger.id);
-    activePlayers.add(opponent.id);
-  } else {
-    // PVE
-    const player = interaction.user;
-    const botUser = {
-      username: `Bot (${options.difficulty})`,
-      id: interaction.client.user.id,
-    };
-    if (chosenColor === 'white')
-      [gameData.playerWhite, gameData.playerBlack] = [player, botUser];
-    else if (chosenColor === 'black')
-      [gameData.playerWhite, gameData.playerBlack] = [botUser, player];
-    else
-      [gameData.playerWhite, gameData.playerBlack] =
-        Math.random() > 0.5 ? [player, botUser] : [botUser, player];
-
-    activePlayers.add(player.id);
-
-    gameData.engine = spawn(stockfishPath);
-
-    // --- CHANGE: Remove the noisy debug listener ---
-    // gameData.engine.stdout.on('data', (data) => {
-    //   console.log(`[DEBUG] Stockfish says: ${data}`);
-    // });
-
-    gameData.engine.stdin.write('uci\n');
-    gameData.engine.stdin.write(
-      `setoption name Skill Level value ${
-        difficultyLevels[options.difficulty]
-      }\n`
-    );
-    gameData.engine.on('error', (err) =>
-      console.error('Stockfish engine error:', err)
-    );
-  }
-
-  activeGames.set(channelId, gameData);
-
-  const createEmbed = (endReason = null) => {
-    const turn = game.turn();
-    const currentPlayer =
-      turn === 'w' ? gameData.playerWhite : gameData.playerBlack;
-    let description, status;
-
-    if (endReason) {
-      const winner = turn === 'w' ? gameData.playerBlack : gameData.playerWhite;
-      switch (endReason) {
-        case 'checkmate':
-          description = `**Checkmate!** ${winner.username} wins.`;
-          status = 'Checkmate!';
-          break;
-        case 'stalemate':
-          description = '**Stalemate!** The game is a draw.';
-          status = 'Draw';
-          break;
-        case 'repetition':
-          description = '**Draw** by threefold repetition.';
-          status = 'Draw';
-          break;
-        case 'draw_accepted':
-          description = '**Game drawn by agreement.**';
-          status = 'Draw';
-          break;
-        case 'insufficient':
-          description = '**Draw** due to insufficient material.';
-          status = 'Draw';
-          break;
-        case 'idle':
-          description = '**Game ended due to inactivity.**';
-          status = 'Timed Out';
-          break;
-        default:
-          description = `**${endReason} has resigned.** ${winner.username} wins!`;
-          status = 'Resigned';
-      }
-    } else {
-      description = `It's **${currentPlayer.username}**'s turn (${
-        turn === 'w' ? 'White' : 'Black'
-      }).\nMake a move (e.g., \`e4\`), or type \`resign\`, \`draw\`, or \`takeback\`.`;
-      status = game.inCheck() ? 'Check!' : 'In Progress';
+  initGameCollector: (interaction) => {
+    if (gameCollectors.has(interaction.channelId)) {
+      gameCollectors.get(interaction.channelId).stop();
     }
-
-    return new EmbedBuilder()
-      .setColor('#744c2c')
-      .setTitle(
-        `${gameData.playerWhite.username} (White) vs. ${gameData.playerBlack.username} (Black)`
-      )
-      .setDescription(description)
-      .setImage(getBoardImageUrl(game.fen()))
-      .addFields(
-        { name: 'Last Move', value: gameData.lastMove, inline: true },
-        { name: 'Status', value: status, inline: true }
-      )
-      .setFooter({ text: `FEN: ${game.fen()}` });
-  };
-
-  await wait(2000);
-
-  if (gameType === 'pvp') {
-    await interaction.editReply({
-      content: `Game started! ${gameData.playerWhite.username} is White.`,
-      embeds: [createEmbed()],
-      components: [],
+    const collector = interaction.channel.createMessageCollector({
+      filter: (m) => !m.author.bot,
+      time: 1_800_000,
     });
-  } else {
-    await interaction.editReply({ embeds: [createEmbed()] });
-  }
+    gameCollectors.set(interaction.channelId, collector);
 
-  const makeBotMove = () => {
-    return new Promise((resolve) => {
-      gameData.engine.stdin.write(`position fen ${game.fen()}\n`);
-      gameData.engine.stdin.write(`go movetime 1500\n`);
+    collector.on('collect', async (message) => {
+      const gameDoc = await Game.findOne({ channelId: message.channelId });
+      if (!gameDoc) return collector.stop();
 
-      const onData = (data) => {
-        const lines = data.toString().split('\n');
-        const bestMoveLine = lines.find((line) => line.startsWith('bestmove'));
-        if (bestMoveLine) {
-          const bestMove = bestMoveLine.split(' ')[1];
-          if (bestMove && bestMove !== '(none)') {
-            // --- CHANGE: Log the best move clearly ---
-            console.log(`Stockfish calculated best move: ${bestMove}`);
-            game.move(bestMove, { sloppy: true });
-            // --- CHANGE: Use the new formatting function ---
-            gameData.lastMove = formatLastMove(game);
+      const game = new Chess(gameDoc.fen);
+      const turn = game.turn();
+      const currentPlayerId =
+        turn === 'w' ? gameDoc.playerWhiteId : gameDoc.playerBlackId;
+
+      if (message.author.id !== currentPlayerId) return;
+      const userInput = message.content.trim();
+      const command = userInput.toLowerCase();
+
+      if (command === 'resign' || isChessMove(userInput)) {
+        if (message.deletable) await message.delete().catch(() => {});
+      }
+
+      if (command === 'resign') {
+        return collector.stop({
+          result: 'resign',
+          user: message.author.username,
+        });
+      }
+
+      if (isChessMove(userInput)) {
+        const move = game.move(userInput, { sloppy: true });
+        if (move === null) return;
+
+        await Game.updateOne(
+          { channelId: message.channel.id },
+          { fen: game.fen() }
+        );
+        const gameMessage = await message.channel.messages
+          .fetch(gameDoc.messageId)
+          .catch(() => null);
+
+        if (game.isGameOver()) {
+          const result = game.isCheckmate()
+            ? 'checkmate'
+            : game.isStalemate()
+            ? 'stalemate'
+            : game.isThreefoldRepetition()
+            ? 'repetition'
+            : 'insufficient';
+          return collector.stop({ result });
+        }
+        if (gameMessage)
+          await gameMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
+
+        if (gameDoc.gameType === 'pve') {
+          await makeBotMove(game, message.channel.id);
+          await Game.updateOne(
+            { channelId: message.channel.id },
+            { fen: game.fen() }
+          );
+          if (game.isGameOver()) {
+            const result = game.isCheckmate() ? 'checkmate' : 'stalemate';
+            return collector.stop({ result });
           }
-          gameData.engine.stdout.removeListener('data', onData);
-          resolve();
+          if (gameMessage)
+            await gameMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
         }
-      };
-      gameData.engine.stdout.on('data', onData);
+      }
     });
-  };
 
-  if (
-    gameType === 'pve' &&
-    game.turn() === 'w' &&
-    gameData.playerWhite.id === interaction.client.user.id
-  ) {
-    await makeBotMove();
-    await wait(2000);
-    await interaction.editReply({
-      embeds: [createEmbed(game.isGameOver() ? 'checkmate' : null)],
+    collector.on('end', async (collected, reason) => {
+      gameCollectors.delete(interaction.channelId);
+      const gameDoc = await Game.findOneAndDelete({
+        channelId: interaction.channelId,
+      });
+      if (!gameDoc) return;
+      if (activePveEngines.has(interaction.channelId)) {
+        activePveEngines.get(interaction.channelId).kill();
+        activePveEngines.delete(interaction.channelId);
+      }
+      const game = new Chess(gameDoc.fen);
+      const finalEmbed = createEmbed(
+        game,
+        gameDoc,
+        reason || { result: 'idle' }
+      );
+      const gameMessage = await interaction.channel.messages
+        .fetch(gameDoc.messageId)
+        .catch(() => null);
+      if (gameMessage)
+        await gameMessage.edit({ embeds: [finalEmbed], components: [] });
+
+      if (gameDoc.gameType === 'pvp' && reason && reason.result) {
+        const white = await User.findOne({ userId: gameDoc.playerWhiteId });
+        const black = await User.findOne({ userId: gameDoc.playerBlackId });
+        if (!white || !black) return;
+        let resultType;
+        if (reason.result === 'checkmate')
+          resultType = game.turn() === 'b' ? 'white' : 'black';
+        else if (reason.result === 'resign')
+          resultType =
+            gameDoc.playerWhiteUsername === reason.user ? 'black' : 'white';
+        else resultType = 'draw';
+
+        if (resultType !== 'draw') {
+          const { newWhiteElo, newBlackElo } = await calculateElo(
+            white,
+            black,
+            resultType
+          );
+          const whiteUpdate = { elo: newWhiteElo, $inc: {} };
+          const blackUpdate = { elo: newBlackElo, $inc: {} };
+          if (resultType === 'white') {
+            whiteUpdate.$inc['stats.wins'] = 1;
+            blackUpdate.$inc['stats.losses'] = 1;
+          } else {
+            whiteUpdate.$inc['stats.losses'] = 1;
+            blackUpdate.$inc['stats.wins'] = 1;
+          }
+          await User.updateOne({ userId: white.userId }, whiteUpdate);
+          await User.updateOne({ userId: black.userId }, blackUpdate);
+        } else {
+          await User.updateMany(
+            { userId: { $in: [white.userId, black.userId] } },
+            { $inc: { 'stats.draws': 1 } }
+          );
+        }
+      }
     });
-  }
-
-  const messageCollector = interaction.channel.createMessageCollector({
-    filter: (m) => !m.author.bot && activePlayers.has(m.author.id),
-    time: 900000,
-  });
-
-  messageCollector.on('collect', async (message) => {
-    const turn = game.turn();
-    const currentPlayer =
-      turn === 'w' ? gameData.playerWhite : gameData.playerBlack;
-    if (message.author.id !== currentPlayer.id) return;
-
-    const userInput = message.content.trim();
-    const command = userInput.toLowerCase();
-
-    if (
-      command === 'resign' ||
-      command === 'draw' ||
-      command === 'takeback' ||
-      isChessMove(userInput)
-    ) {
-      if (message.deletable) await message.delete().catch(() => {});
-    }
-
-    if (command === 'resign')
-      return messageCollector.stop(message.author.username);
-
-    if (command === 'draw') {
-      if (gameType === 'pve') {
-        return interaction.followUp({
-          content: 'The bot declines your draw offer. The fight must continue!',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-      const opponent =
-        message.author.id === gameData.playerWhite.id // Use message.author here
-          ? gameData.playerBlack
-          : gameData.playerWhite;
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('accept_draw')
-          .setLabel('Accept Draw')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('decline_draw')
-          .setLabel('Decline')
-          .setStyle(ButtonStyle.Danger)
-      );
-      const msg = await interaction.followUp({
-        content: `${opponent}, ${message.author.username} offers a draw.`,
-        components: [row],
-      });
-      try {
-        const res = await msg.awaitMessageComponent({
-          filter: (i) => i.user.id === opponent.id,
-          time: 60000,
-        });
-        if (res.customId === 'accept_draw') {
-          messageCollector.stop('draw_accepted');
-        } else {
-          await res.update({ content: 'Draw offer declined.', components: [] });
-        }
-      } catch (err) {
-        await msg.edit({ content: 'Draw offer expired.', components: [] });
-      }
-      return;
-    }
-
-    if (command === 'takeback') {
-      if (gameType === 'pve') {
-        return interaction.followUp({
-          content: 'You cannot take back a move against the bot.',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-      if (game.history().length < 2) {
-        return interaction.followUp({
-          content: 'Not enough moves have been made to take back.',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-      const opponent =
-        message.author.id === gameData.playerWhite.id // Use message.author here
-          ? gameData.playerBlack
-          : gameData.playerWhite;
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('accept_takeback')
-          .setLabel('Accept Takeback')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('decline_takeback')
-          .setLabel('Decline')
-          .setStyle(ButtonStyle.Danger)
-      );
-      const msg = await interaction.followUp({
-        content: `${opponent}, ${message.author.username} wants to take back the last move.`,
-        components: [row],
-      });
-      try {
-        const res = await msg.awaitMessageComponent({
-          filter: (i) => i.user.id === opponent.id,
-          time: 60000,
-        });
-        if (res.customId === 'accept_takeback') {
-          game.undo();
-          game.undo();
-          // --- CHANGE: Use the new formatting function ---
-          gameData.lastMove = formatLastMove(game);
-          await interaction.editReply({ embeds: [createEmbed()] });
-          await res.update({ content: 'Takeback accepted.', components: [] });
-        } else {
-          await res.update({
-            content: 'Takeback request declined.',
-            components: [],
-          });
-        }
-      } catch (err) {
-        await msg.edit({
-          content: 'Takeback request expired.',
-          components: [],
-        });
-      }
-      return;
-    }
-
-    if (isChessMove(userInput)) {
-      try {
-        game.move(userInput, { sloppy: true });
-      } catch (e1) {
-        try {
-          const capitalizedMove =
-            userInput.charAt(0).toUpperCase() + userInput.slice(1);
-          game.move(capitalizedMove, { sloppy: true });
-        } catch (e2) {
-          return interaction.followUp({
-            content: `\`${userInput}\` is not a valid move.`,
-            flags: [MessageFlags.Ephemeral],
-          });
-        }
-      }
-
-      // --- CHANGE: Use the new formatting function ---
-      gameData.lastMove = formatLastMove(game);
-
-      if (game.isGameOver()) return messageCollector.stop('gameover');
-
-      await interaction.editReply({ embeds: [createEmbed()] });
-
-      if (gameType === 'pve') {
-        await makeBotMove();
-        if (game.isGameOver()) return messageCollector.stop('gameover');
-
-        await wait(2000);
-        await interaction.editReply({ embeds: [createEmbed()] });
-      }
-    }
-  });
-
-  messageCollector.on('end', async (collected, reason) => {
-    activePlayers.delete(gameData.playerWhite.id);
-    activePlayers.delete(gameData.playerBlack.id);
-    activeGames.delete(channelId);
-    if (gameData.engine) gameData.engine.kill();
-
-    let endReason = reason;
-    if (reason === 'gameover') {
-      if (game.isCheckmate()) endReason = 'checkmate';
-      else if (game.isStalemate()) endReason = 'stalemate';
-      else if (game.isThreefoldRepetition()) endReason = 'repetition';
-      else if (game.isInsufficientMaterial()) endReason = 'insufficient';
-    }
-
-    const finalEmbed = createEmbed(endReason);
-
-    await wait(2000);
-    interaction
-      .editReply({ embeds: [finalEmbed], components: [] })
-      .catch(() => {});
-  });
-}
+  },
+};

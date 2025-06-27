@@ -7,10 +7,11 @@ const {
   GatewayIntentBits,
   EmbedBuilder,
   Partials,
+  MessageFlags,
 } = require('discord.js');
 require('dotenv').config();
 const config = require('./config.js');
-const express = require('express'); // <-- ADDED for keep-alive
+const connectDB = require('./utils/dbConnect');
 
 const client = new Client({
   intents: [
@@ -19,70 +20,56 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildVoiceStates, // <-- ADDED: Crucial for music bots
+    GatewayIntentBits.GuildVoiceStates,
   ],
   partials: [Partials.Channel],
 });
 
-// --- Ticket System Setup ---
+// In-memory ticket system (can be refactored to DB later)
 client.openTickets = new Collection();
 let ticketCounter = 1;
-// Remember to update these IDs if they change
 const GUILD_ID = process.env.GUILD_ID;
 const CATEGORY_ID = process.env.CATEGORY_ID;
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
 
-// --- COMMAND LOADING ---
+// Command Loading
 client.commands = new Collection();
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
-console.log('[COMMAND LOADER] Starting to load commands...'); // Optional: good for debugging
+console.log('[COMMAND LOADER] Starting to load commands...');
 for (const folder of commandFolders) {
-  // folder will be 'games', 'moderation', 'utility'
   const commandsPath = path.join(foldersPath, folder);
   const commandFiles = fs
     .readdirSync(commandsPath)
     .filter((file) => file.endsWith('.js'));
 
-  if (commandFiles.length === 0) {
-    // Optional: good for debugging
-    console.log(`[COMMAND LOADER] No command files found in ${folder}.`);
-    continue;
-  }
-
   for (const file of commandFiles) {
-    // file will be e.g., 'chess.js', 'ban.js'
     const filePath = path.join(commandsPath, file);
     try {
-      // Optional: Added try-catch for more robust loading
       const command = require(filePath);
-      // Modified to check for both 'data' and 'execute'
       if ('data' in command && 'execute' in command) {
         command.category = folder;
         client.commands.set(command.data.name, command);
-        console.log(
-          `[COMMAND LOADER] Loaded command: /${command.data.name} (Category: ${command.category})`
-        ); // Optional: good for debugging
+        console.log(`[COMMAND LOADER] Loaded command: /${command.data.name}`);
       } else {
         console.log(
-          `[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`
+          `[WARNING] Command at ${filePath} is missing "data" or "execute".`
         );
       }
     } catch (error) {
-      // Optional: Added try-catch
       console.error(`[ERROR] Failed to load command at ${filePath}:`, error);
     }
   }
 }
 console.log('[COMMAND LOADER] Finished loading commands.');
 
-// --- BOT READY ---
+// Bot Ready
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Ready! Logged in as ${c.user.tag}`);
 });
 
-// --- INTERACTION AND COMMAND HANDLER ---
+// Interaction and Command Handler
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -94,41 +81,44 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   try {
     await command.execute(interaction);
+
+    if (command.data.name === 'chess' && command.initGameCollector) {
+      if (interaction.deferred || interaction.replied) {
+        command.initGameCollector(interaction);
+      }
+    }
   } catch (error) {
     console.error(error);
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({
         content: 'There was an error while executing this command!',
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     } else {
       await interaction.reply({
         content: 'There was an error while executing this command!',
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
   }
 });
 
-// --- DM AND TICKET RELAY HANDLER ---
-// Your existing ticket system code... (no changes needed here)
+// DM and Ticket Relay Handler
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild)
-    return console.error(
-      'CRITICAL: Guild not found! Check your GUILD_ID in main.js'
-    );
+    return console.error('CRITICAL: Guild not found! Check your GUILD_ID.');
 
-  // Part A: Handling Staff Replies in Ticket Channels
   if (message.inGuild() && client.openTickets.has(message.channel.id)) {
     const userId = client.openTickets.get(message.channel.id);
     try {
       const user = await client.users.fetch(userId);
-      let content = `**${message.author.username}:** ${message.content}`;
-      let files = message.attachments.map((a) => a.url);
-      await user.send({ content, files });
+      await user.send({
+        content: `**${message.author.username}:** ${message.content}`,
+        files: message.attachments.map((a) => a.url),
+      });
     } catch (error) {
       message.channel.send(
         '⚠️ Could not deliver the message to the user. They may have DMs disabled.'
@@ -137,39 +127,35 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  // Part B: Handling Direct Messages from Users
   if (!message.inGuild()) {
     const userHasTicket = [...client.openTickets.values()].includes(
       message.author.id
     );
-
     if (userHasTicket) {
-      // B1: Relay message to existing ticket
       const channelId = [...client.openTickets.entries()].find(
         ([, value]) => value === message.author.id
       )[0];
       const channel = guild.channels.cache.get(channelId);
       if (channel) {
-        let content = `**${message.author.username}:** ${message.content}`;
-        let files = message.attachments.map((a) => a.url);
-        channel.send({ content, files });
+        channel.send({
+          content: `**${message.author.username}:** ${message.content}`,
+          files: message.attachments.map((a) => a.url),
+        });
       }
     } else {
-      // B2: Create a new ticket
       try {
         await message.author.send(
-          "We've received your message! Kindly wait for one of our staff to get to you :)"
+          "We've received your message! A staff member will be with you shortly."
         );
 
         const channel = await guild.channels.create({
-          name: `ticket-${ticketCounter}`,
+          name: `ticket-${ticketCounter++}`,
           type: 0,
           parent: CATEGORY_ID,
           topic: `Ticket for ${message.author.tag} (${message.author.id})`,
         });
 
         client.openTickets.set(channel.id, message.author.id);
-        ticketCounter++;
 
         const reportEmbed = new EmbedBuilder()
           .setColor('#0099ff')
@@ -183,10 +169,7 @@ client.on(Events.MessageCreate, async (message) => {
           .setFooter({ text: `User ID: ${message.author.id}` });
 
         if (message.attachments.size > 0) {
-          const attachment = message.attachments.first();
-          if (attachment.contentType?.startsWith('image/')) {
-            reportEmbed.setImage(attachment.url);
-          }
+          reportEmbed.setImage(message.attachments.first().url);
         }
 
         await channel.send({
@@ -196,27 +179,21 @@ client.on(Events.MessageCreate, async (message) => {
       } catch (error) {
         console.error('Error creating new ticket:', error);
         await message.author.send(
-          'Sorry, something went wrong while creating your ticket. Please contact a staff member directly.'
+          'Sorry, something went wrong while creating your ticket.'
         );
       }
     }
   }
 });
 
-// --- WELCOME ROLE HANDLER ---
-// Your existing member add code... (no changes needed here)
+// Welcome Role Handler
 client.on(Events.GuildMemberAdd, async (member) => {
   if (member.guild.id !== config.guildId) return;
-  console.log(
-    `New member joined: ${member.user.tag}. Assigning Unverified role.`
-  );
   try {
     const role = member.guild.roles.cache.get(config.unverifiedRoleId);
     if (role) {
       await member.roles.add(role);
-      console.log(
-        `Successfully assigned Unverified role to ${member.user.tag}.`
-      );
+      console.log(`Assigned Unverified role to ${member.user.tag}.`);
     } else {
       console.error(
         `[ERROR] Unverified role with ID ${config.unverifiedRoleId} not found!`
@@ -230,18 +207,9 @@ client.on(Events.GuildMemberAdd, async (member) => {
   }
 });
 
-// --- REPLIT KEEP-ALIVE ---
-// This part is for hosting on Replit. It creates a small web server.
-const server = express();
-server.all('/', (req, res) => {
-  res.send('Bot is running!');
-});
-function keepAlive() {
-  server.listen(3000, () => {
-    console.log('Server is ready.');
-  });
+async function startBot() {
+  await connectDB();
+  await client.login(process.env.DISCORD_TOKEN);
 }
-keepAlive(); // <-- ADDED: Starts the server
 
-// --- BOT LOGIN ---
-client.login(process.env.DISCORD_TOKEN);
+startBot();
