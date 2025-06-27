@@ -35,10 +35,11 @@ function getBoardImageUrl(fen) {
   return `https://chessboardimage.com/${boardOnly}.png?theme=wood`;
 }
 
+// --- IMPROVED: Regex now correctly handles O-O-O ---
 function isChessMove(str) {
   const chessMoveRegex =
-    /^(?:[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBRQK])?|[O-O](?:-O)?)[+#]?$/i;
-  return chessMoveRegex.test(str);
+    /^(?:[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBRQK])?|O-O(?:-O)?)[+#]?$/i;
+  return chessMoveRegex.test(str.trim());
 }
 
 function formatLastMove(game) {
@@ -196,13 +197,9 @@ async function startGame(interaction, gameType, options) {
     activePveEngines.set(channelId, engine);
   }
 
-  const initialContent =
-    gameType === 'pvp'
-      ? `Game started! ${playerWhite.username} is White.`
-      : ' ';
-  const sentMessage = await interaction.editReply({
-    content: initialContent,
-    embeds: [new EmbedBuilder().setTitle('Setting up game...')],
+  const sentMessage = await interaction.followUp({
+    content: 'Setting up game...',
+    embeds: [],
   });
 
   const gameDoc = await Game.create({
@@ -216,9 +213,13 @@ async function startGame(interaction, gameType, options) {
   });
 
   const game = new Chess(gameDoc.fen);
+  const initialContent =
+    gameType === 'pvp'
+      ? `Game started! ${playerWhite.username} is White.`
+      : ' ';
   await sentMessage.edit({
     embeds: [createEmbed(game, gameDoc)],
-    content: initialContent || null,
+    content: initialContent,
   });
 
   if (
@@ -262,11 +263,13 @@ module.exports = {
         )
     ),
 
+  // --- REWRITTEN: The entire execute function is now robust ---
   async execute(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+
     if (await Game.findOne({ channelId: interaction.channelId })) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'A game is already in progress in this channel!',
-        flags: [MessageFlags.Ephemeral],
       });
     }
     const playerInGame = await Game.findOne({
@@ -276,9 +279,8 @@ module.exports = {
       ],
     });
     if (playerInGame) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'You are already in a game in another channel!',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -287,20 +289,20 @@ module.exports = {
 
     if (opponent) {
       if (opponent.bot || opponent.id === challenger.id) {
-        return interaction.reply({
+        return interaction.editReply({
           content: "You can't challenge bots or yourself.",
-          flags: [MessageFlags.Ephemeral],
         });
       }
       const opponentInGame = await Game.findOne({
         $or: [{ playerWhiteId: opponent.id }, { playerBlackId: opponent.id }],
       });
       if (opponentInGame) {
-        return interaction.reply({
+        return interaction.editReply({
           content: `${opponent.username} is already in a game!`,
-          flags: [MessageFlags.Ephemeral],
         });
       }
+
+      await interaction.editReply({ content: `${opponent}`, ephemeral: false });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -312,8 +314,7 @@ module.exports = {
           .setLabel('Decline')
           .setStyle(ButtonStyle.Danger)
       );
-      const challengeMessage = await interaction.reply({
-        content: `${opponent}`,
+      const challengeMessage = await interaction.followUp({
         embeds: [
           new EmbedBuilder()
             .setTitle('♟️ Chess Challenge!')
@@ -323,12 +324,11 @@ module.exports = {
             .setColor('#744c2c'),
         ],
         components: [row],
+        fetchReply: true,
       });
       try {
         const response = await challengeMessage.awaitMessageComponent({
-          filter: (i) =>
-            i.user.id === opponent.id &&
-            (i.customId === 'accept_chess' || i.customId === 'decline_chess'),
+          filter: (i) => i.user.id === opponent.id,
           time: 60000,
         });
         if (response.customId === 'decline_chess') {
@@ -339,14 +339,14 @@ module.exports = {
           });
         }
         await response.update({
-          content: 'Challenge accepted! Setting up the game...',
+          content: 'Challenge accepted! Setting up game...',
           embeds: [],
           components: [],
         });
         await startGame(interaction, 'pvp', { challenger, opponent });
       } catch (err) {
-        await interaction
-          .editReply({
+        await challengeMessage
+          .edit({
             content: 'The challenge expired.',
             embeds: [],
             components: [],
@@ -356,22 +356,25 @@ module.exports = {
     } else {
       const difficulty = interaction.options.getString('difficulty');
       if (!difficulty) {
-        return interaction.reply({
+        return interaction.editReply({
           content: 'You must select a difficulty when playing against the bot.',
-          flags: [MessageFlags.Ephemeral],
         });
       }
       if (!fs.existsSync(stockfishPath)) {
-        return interaction.reply({
+        return interaction.editReply({
           content: 'Error: The chess engine is not configured.',
-          flags: [MessageFlags.Ephemeral],
         });
       }
-      await interaction.deferReply();
+
+      await interaction.editReply({
+        content: 'Setting up your game...',
+        ephemeral: false,
+      });
       await startGame(interaction, 'pve', { difficulty });
     }
   },
 
+  // --- REWRITTEN: The initGameCollector is now more flexible and robust ---
   initGameCollector: (interaction) => {
     if (gameCollectors.has(interaction.channelId)) {
       gameCollectors.get(interaction.channelId).stop();
@@ -392,23 +395,36 @@ module.exports = {
         turn === 'w' ? gameDoc.playerWhiteId : gameDoc.playerBlackId;
 
       if (message.author.id !== currentPlayerId) return;
-      const userInput = message.content.trim();
-      const command = userInput.toLowerCase();
 
-      if (command === 'resign' || isChessMove(userInput)) {
+      let userInput = message.content.trim();
+
+      if (userInput.toLowerCase() === 'resign') {
         if (message.deletable) await message.delete().catch(() => {});
-      }
-
-      if (command === 'resign') {
         return collector.stop({
           result: 'resign',
           user: message.author.username,
         });
       }
 
+      // --- IMPROVED: Flexible move parsing ---
       if (isChessMove(userInput)) {
+        if (message.deletable) await message.delete().catch(() => {});
+
+        // Handle variations of castling
+        if (userInput.toLowerCase() === 'o-o') userInput = 'O-O';
+        if (userInput.toLowerCase() === 'o-o-o') userInput = 'O-O-O';
+
         const move = game.move(userInput, { sloppy: true });
-        if (move === null) return;
+
+        if (move === null) {
+          // Tell user their move was illegal and delete the message after 5 seconds
+          const ephemeralMsg = await message.channel.send({
+            content: `\`${userInput}\` is not a valid move in this position.`,
+            flags: [MessageFlags.Ephemeral],
+          });
+          setTimeout(() => ephemeralMsg.delete().catch(() => {}), 5000);
+          return;
+        }
 
         await Game.updateOne(
           { channelId: message.channel.id },
@@ -419,13 +435,7 @@ module.exports = {
           .catch(() => null);
 
         if (game.isGameOver()) {
-          const result = game.isCheckmate()
-            ? 'checkmate'
-            : game.isStalemate()
-            ? 'stalemate'
-            : game.isThreefoldRepetition()
-            ? 'repetition'
-            : 'insufficient';
+          const result = game.isCheckmate() ? 'checkmate' : 'stalemate';
           return collector.stop({ result });
         }
         if (gameMessage)
@@ -453,10 +463,12 @@ module.exports = {
         channelId: interaction.channelId,
       });
       if (!gameDoc) return;
+
       if (activePveEngines.has(interaction.channelId)) {
         activePveEngines.get(interaction.channelId).kill();
         activePveEngines.delete(interaction.channelId);
       }
+
       const game = new Chess(gameDoc.fen);
       const finalEmbed = createEmbed(
         game,
@@ -473,12 +485,12 @@ module.exports = {
         const white = await User.findOne({ userId: gameDoc.playerWhiteId });
         const black = await User.findOne({ userId: gameDoc.playerBlackId });
         if (!white || !black) return;
+
         let resultType;
         if (reason.result === 'checkmate')
           resultType = game.turn() === 'b' ? 'white' : 'black';
         else if (reason.result === 'resign')
-          resultType =
-            gameDoc.playerWhiteUsername === reason.user ? 'black' : 'white';
+          resultType = white.username === reason.user ? 'black' : 'white';
         else resultType = 'draw';
 
         if (resultType !== 'draw') {
@@ -487,21 +499,93 @@ module.exports = {
             black,
             resultType
           );
-          const whiteUpdate = { elo: newWhiteElo, $inc: {} };
-          const blackUpdate = { elo: newBlackElo, $inc: {} };
+          const eloChangeWhite = newWhiteElo - white.elo;
+          const eloChangeBlack = newBlackElo - black.elo;
+
+          const whiteGameRecord = {
+            opponentId: black.userId,
+            opponentUsername: black.username,
+            result: 'win',
+            eloChange: eloChangeWhite,
+          };
+          const blackGameRecord = {
+            opponentId: white.userId,
+            opponentUsername: white.username,
+            result: 'loss',
+            eloChange: eloChangeBlack,
+          };
+
           if (resultType === 'white') {
-            whiteUpdate.$inc['stats.wins'] = 1;
-            blackUpdate.$inc['stats.losses'] = 1;
+            await User.updateOne(
+              { userId: white.userId },
+              {
+                elo: newWhiteElo,
+                $inc: { 'stats.wins': 1 },
+                $push: {
+                  recentGames: { $each: [whiteGameRecord], $slice: -10 },
+                },
+              }
+            );
+            await User.updateOne(
+              { userId: black.userId },
+              {
+                elo: newBlackElo,
+                $inc: { 'stats.losses': 1 },
+                $push: {
+                  recentGames: { $each: [blackGameRecord], $slice: -10 },
+                },
+              }
+            );
           } else {
-            whiteUpdate.$inc['stats.losses'] = 1;
-            blackUpdate.$inc['stats.wins'] = 1;
+            whiteGameRecord.result = 'loss';
+            blackGameRecord.result = 'win';
+            await User.updateOne(
+              { userId: white.userId },
+              {
+                elo: newWhiteElo,
+                $inc: { 'stats.losses': 1 },
+                $push: {
+                  recentGames: { $each: [whiteGameRecord], $slice: -10 },
+                },
+              }
+            );
+            await User.updateOne(
+              { userId: black.userId },
+              {
+                elo: newBlackElo,
+                $inc: { 'stats.wins': 1 },
+                $push: {
+                  recentGames: { $each: [blackGameRecord], $slice: -10 },
+                },
+              }
+            );
           }
-          await User.updateOne({ userId: white.userId }, whiteUpdate);
-          await User.updateOne({ userId: black.userId }, blackUpdate);
         } else {
-          await User.updateMany(
-            { userId: { $in: [white.userId, black.userId] } },
-            { $inc: { 'stats.draws': 1 } }
+          const whiteGameRecord = {
+            opponentId: black.userId,
+            opponentUsername: black.username,
+            result: 'draw',
+            eloChange: 0,
+          };
+          const blackGameRecord = {
+            opponentId: white.userId,
+            opponentUsername: white.username,
+            result: 'draw',
+            eloChange: 0,
+          };
+          await User.updateOne(
+            { userId: white.userId },
+            {
+              $inc: { 'stats.draws': 1 },
+              $push: { recentGames: { $each: [whiteGameRecord], $slice: -10 } },
+            }
+          );
+          await User.updateOne(
+            { userId: black.userId },
+            {
+              $inc: { 'stats.draws': 1 },
+              $push: { recentGames: { $each: [blackGameRecord], $slice: -10 } },
+            }
           );
         }
       }
