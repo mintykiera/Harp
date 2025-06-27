@@ -77,18 +77,22 @@ module.exports = {
       console.error('Failed to log Google search to DB:', dbError);
     }
 
-    // Fetch first batch of results
-    let allResults = await fetchGoogleResults(query, 1);
+    // Prefetch up to 50 results
+    const allResults = [];
+    for (let start = 1; start <= MAX_RESULTS; start += 10) {
+      const batch = await fetchGoogleResults(query, start);
+      if (!batch.length) break;
+      allResults.push(...batch);
+    }
 
     if (allResults.length === 0) {
       return interaction.editReply(`No results found for **${query}**.`);
     }
 
     let currentPage = 0;
+    const totalPages = Math.ceil(allResults.length / 10);
 
     const generatePayload = (page) => {
-      const totalResults = Math.min(allResults.length, MAX_RESULTS);
-      const totalPages = Math.ceil(totalResults / 10);
       const startIndex = page * 10;
       const pageResults = allResults.slice(startIndex, startIndex + 10);
 
@@ -118,7 +122,7 @@ module.exports = {
           .setCustomId('next_page')
           .setLabel('▶')
           .setStyle(ButtonStyle.Primary)
-          .setDisabled(page >= totalPages - 1 || totalPages === 1)
+          .setDisabled(page >= totalPages - 1)
       );
 
       return {
@@ -129,7 +133,7 @@ module.exports = {
 
     const message = await interaction.editReply(generatePayload(currentPage));
 
-    if (allResults.length <= 10) return;
+    if (totalPages <= 1) return;
 
     const collector = message.createMessageComponentCollector({
       componentType: ComponentType.Button,
@@ -147,19 +151,6 @@ module.exports = {
 
       const isNext = i.customId === 'next_page';
       currentPage += isNext ? 1 : -1;
-
-      const needMoreResults =
-        isNext &&
-        currentPage * 10 >= allResults.length &&
-        allResults.length < MAX_RESULTS;
-
-      if (needMoreResults) {
-        const nextBatch = await fetchGoogleResults(
-          query,
-          allResults.length + 1
-        );
-        allResults.push(...nextBatch);
-      }
 
       const updatedPayload = generatePayload(currentPage);
       await i.update(updatedPayload);
