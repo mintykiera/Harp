@@ -3,6 +3,9 @@ const {
   EmbedBuilder,
   MessageFlags,
 } = require('discord.js');
+// --- CHANGE 1: Use a standard require() at the top of the file. ---
+// This loads the module when the bot starts, not during the command.
+const { capitalCase } = require('change-case');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -10,16 +13,13 @@ module.exports = {
     .setDescription('Lists all of my available commands by category.'),
 
   async execute(interaction) {
-    // STEP 1: Defer the reply IMMEDIATELY. This is the crucial fix.
-    // This acknowledges the interaction and prevents any timeouts.
+    // --- CHANGE 2: Defer the reply as the VERY FIRST action. ---
     await interaction.deferReply();
 
-    // Dynamically import the 'change-case' module
-    const { capitalCase } = await import('change-case');
+    // The dynamic import line has been removed from here.
 
     // Group commands by category
     const categories = new Map();
-
     const commandsToDisplay = interaction.client.commands.filter(
       (cmd) => cmd.data.name !== 'commands'
     );
@@ -46,14 +46,14 @@ module.exports = {
 
     if (sortedCategories.length === 0) {
       embed.setDescription('There are no commands available to display.');
-      // This must also be an editReply now, since we deferred.
+      // This must now be an editReply since we deferred.
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // Add a field for each category
     for (const category of sortedCategories) {
       const commandsInCategory = categories.get(category);
       commandsInCategory.sort((a, b) => a.data.name.localeCompare(b.data.name));
-
       const commandList = commandsInCategory
         .map((cmd) => `**\`/${cmd.data.name}\`**: ${cmd.data.description}`)
         .join('\n');
@@ -64,8 +64,7 @@ module.exports = {
       });
     }
 
-    // STEP 2: Use editReply to send the final response.
-    // This replaces the "Harp is thinking..." message with our completed embed.
+    // Use editReply to send the final response.
     await interaction.editReply({
       embeds: [embed],
     });
