@@ -25,6 +25,16 @@ const UserSchema = new mongoose.Schema({
       timestamp: { type: Date, default: Date.now },
     },
   ],
+  // --- NEW FIELD ADDED HERE ---
+  recentGames: [
+    {
+      opponentId: String,
+      opponentUsername: String,
+      result: { type: String, enum: ['win', 'loss', 'draw'] },
+      eloChange: Number,
+      timestamp: { type: Date, default: Date.now },
+    },
+  ],
 });
 
 module.exports = mongoose.model('User', UserSchema);
