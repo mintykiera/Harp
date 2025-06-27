@@ -16,8 +16,8 @@ const GeminiSchema = new mongoose.Schema({
   },
   history: [
     {
-      role: String,
-      parts: [{ text: String }],
+      role: { type: String, required: true },
+      parts: [{ text: { type: String, required: true } }],
     },
   ],
   createdAt: {

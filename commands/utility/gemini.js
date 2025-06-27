@@ -1,3 +1,4 @@
+// ✅ Fixed gemini.js
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -11,7 +12,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Gemini = require('../../models/Gemini');
 require('dotenv').config();
 
-const GEMINI_API_KEYS = process.env.GEMINI_API_KEYS?.split(',') || [];
+const GEMINI_API_KEYS =
+  process.env.GEMINI_API_KEYS?.split(',').map((key) => key.trim()) || [];
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-1.5-flash-latest',
@@ -36,7 +38,9 @@ function splitText(text, { maxLength = 4096 } = {}) {
   return chunks;
 }
 
-async function generateWithFallback(prompt, history = []) {
+// Corrected generateWithFallback function
+async function generateWithFallback(prompt, history = null) {
+  // Changed default to null
   for (const apiKey of GEMINI_API_KEYS) {
     const genAI = new GoogleGenerativeAI(apiKey);
     for (const modelName of GEMINI_MODELS) {
@@ -46,14 +50,22 @@ async function generateWithFallback(prompt, history = []) {
           generationConfig,
         });
 
-        if (!Array.isArray(history)) {
-          const result = await model.generateContent(prompt);
+        // Use model.generateContent if no history is provided or if history is an empty array.
+        // This is for single-turn prompts (like title generation) or the very first message of a new chat.
+        if (
+          history === null ||
+          (Array.isArray(history) && history.length === 0)
+        ) {
+          const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }], // Explicitly define user role and parts
+          });
           return { response: result.response, modelName, apiKey };
+        } else {
+          // Otherwise, start a chat with the provided history for multi-turn conversations.
+          const chat = model.startChat({ history });
+          const result = await chat.sendMessage(prompt);
+          return { response: result.response, chat, modelName, apiKey };
         }
-
-        const chat = model.startChat({ history });
-        const result = await chat.sendMessage(prompt);
-        return { response: result.response, chat, modelName, apiKey };
       } catch (error) {
         console.warn(
           `Failed on model ${modelName} with key ending in ...${apiKey.slice(
@@ -148,7 +160,8 @@ module.exports = {
       if (isNewChat) {
         try {
           const titlePrompt = `Generate a very short, 3-5 word title for this prompt. Return only the title text. Prompt: "${prompt}"`;
-          const titleResult = await generateWithFallback(titlePrompt);
+          // Explicitly pass null for history for this one-off title generation
+          const titleResult = await generateWithFallback(titlePrompt, null);
           const potentialTitle = titleResult.response
             .text()
             .trim()
@@ -159,6 +172,8 @@ module.exports = {
         }
       }
 
+      // This call to generateWithFallback will now correctly use model.generateContent if chatHistory is empty,
+      // or model.startChat if chatHistory has existing entries.
       const {
         response,
         chat: updatedChat,
@@ -170,9 +185,17 @@ module.exports = {
           userId: user.id,
           channelId,
           title,
-          history: updatedChat.getHistory(),
+          // If updatedChat is null here, it means generateContent was used directly.
+          // In that case, we need to manually create the history entry for the first turn.
+          history: updatedChat
+            ? updatedChat.getHistory()
+            : [
+                { role: 'user', parts: [{ text: prompt }] },
+                { role: 'model', parts: [{ text: response.text() }] },
+              ],
         });
       } else {
+        // updatedChat will always be present if history was not null/empty for a reply
         session.history = updatedChat.getHistory();
         await session.save();
       }
