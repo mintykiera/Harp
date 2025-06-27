@@ -53,17 +53,19 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    // --- THE FIX: Defer first, think later ---
+    await interaction.deferReply();
+
     if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
       console.error('ERROR: Google API keys are missing from .env file.');
-      return interaction.reply({
+      return interaction.editReply({
         content: 'Sorry, this command is not configured correctly.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
     const query = interaction.options.getString('query');
-    await interaction.deferReply();
 
+    // Now it's safe for this to take time
     try {
       await User.findOneAndUpdate(
         { userId: interaction.user.id },
@@ -144,29 +146,23 @@ module.exports = {
             flags: [MessageFlags.Ephemeral],
           });
         }
-
+        await i.deferUpdate();
         const isNext = i.customId === 'next_page';
         currentPage += isNext ? 1 : -1;
-
         const needsFetch =
           isNext &&
           currentPage * 10 >= allResults.length &&
           allResults.length < MAX_RESULTS;
-
         if (needsFetch) {
-          await i.update({
-            ...generatePayload(currentPage),
-            content: 'Loading more results...',
-          });
           const newResults = await fetchGoogleResults(
             query,
             allResults.length + 1
           );
-          if (newResults) allResults.push(...newResults);
-          await interaction.editReply(generatePayload(currentPage));
-        } else {
-          await i.update(generatePayload(currentPage));
+          if (newResults) {
+            allResults.push(...newResults);
+          }
         }
+        await i.editReply(generatePayload(currentPage));
       });
 
       collector.on('end', () => {
@@ -174,7 +170,7 @@ module.exports = {
         finalPayload.components.forEach((row) =>
           row.components.forEach((btn) => btn.setDisabled(true))
         );
-        interaction.editReply(finalPayload).catch(() => {});
+        message.edit(finalPayload).catch(() => {});
       });
     } catch (error) {
       console.error('Error in Google command:', error.message);

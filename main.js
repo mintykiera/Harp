@@ -12,6 +12,7 @@ const {
 require('dotenv').config();
 const config = require('./config.js');
 const connectDB = require('./utils/dbConnect');
+const express = require('express'); // Import express
 
 const client = new Client({
   intents: [
@@ -43,7 +44,6 @@ for (const folder of commandFolders) {
   const commandFiles = fs
     .readdirSync(commandsPath)
     .filter((file) => file.endsWith('.js'));
-
   for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
     try {
@@ -72,16 +72,11 @@ client.once(Events.ClientReady, (c) => {
 // Interaction and Command Handler
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-
   const command = interaction.client.commands.get(interaction.commandName);
-  if (!command) {
-    console.error(`No command matching ${interaction.commandName} was found.`);
-    return;
-  }
+  if (!command) return;
 
   try {
     await command.execute(interaction);
-
     if (command.data.name === 'chess' && command.initGameCollector) {
       if (interaction.deferred || interaction.replied) {
         command.initGameCollector(interaction);
@@ -90,22 +85,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (error) {
     console.error(`[COMMAND ERROR] ${command.data.name}:`, error);
     try {
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
           content: 'There was an error while executing this command!',
           flags: [MessageFlags.Ephemeral],
         });
       } else {
-        // This may still error if already replied/followed up
-        await interaction.followUp({
+        await interaction.reply({
           content: 'There was an error while executing this command!',
           flags: [MessageFlags.Ephemeral],
         });
       }
     } catch (err) {
       console.warn(
-        '[ERROR HANDLER] Could not send error message (already acknowledged). Suppressing.',
-        err
+        '[ERROR HANDLER] Could not send error message. Suppressing.',
+        err.message
       );
     }
   }
@@ -215,9 +209,27 @@ client.on(Events.GuildMemberAdd, async (member) => {
   }
 });
 
+// Web server to satisfy Render's health checks
+function setupWebServer() {
+  const app = express();
+  const port = process.env.PORT || 3000;
+
+  app.get('/', (req, res) => {
+    res.send('Harp is alive and listening!');
+  });
+
+  app.listen(port, () => {
+    console.log(
+      `[WEB SERVER] Listening on port ${port} to keep the bot alive.`
+    );
+  });
+}
+
 async function startBot() {
   await connectDB();
   await client.login(process.env.DISCORD_TOKEN);
 }
 
+// Start both the web server and the bot
+setupWebServer();
 startBot();
