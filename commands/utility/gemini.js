@@ -11,35 +11,14 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Gemini = require('../../models/Gemini');
 require('dotenv').config();
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
+const GEMINI_API_KEYS = process.env.GEMINI_API_KEYS?.split(',') || [];
 const GEMINI_MODELS = [
+  'gemini-2.5-flash',
   'gemini-1.5-flash-latest',
   'gemini-1.5-pro-latest',
   'gemini-pro',
 ];
 const generationConfig = { temperature: 0.9, maxOutputTokens: 8192 };
-
-async function generateWithFallback(prompt, history = []) {
-  for (const modelName of GEMINI_MODELS) {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        generationConfig,
-      });
-      if (!Array.isArray(history)) {
-        const result = await model.generateContent(prompt);
-        return { response: result.response };
-      }
-      const chat = model.startChat({ history });
-      const result = await chat.sendMessage(prompt);
-      return { response: result.response, chat, modelName };
-    } catch (error) {
-      console.warn(`Model ${modelName} failed: ${error.message}`);
-    }
-  }
-  throw new Error('All Gemini models failed.');
-}
 
 function splitText(text, { maxLength = 4096 } = {}) {
   if (text.length <= maxLength) return [text];
@@ -53,10 +32,39 @@ function splitText(text, { maxLength = 4096 } = {}) {
     }
     currentChunk += line + '\n';
   }
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
+  if (currentChunk.trim()) chunks.push(currentChunk.trim());
   return chunks;
+}
+
+async function generateWithFallback(prompt, history = []) {
+  for (const apiKey of GEMINI_API_KEYS) {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    for (const modelName of GEMINI_MODELS) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig,
+        });
+
+        if (!Array.isArray(history)) {
+          const result = await model.generateContent(prompt);
+          return { response: result.response, modelName, apiKey };
+        }
+
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessage(prompt);
+        return { response: result.response, chat, modelName, apiKey };
+      } catch (error) {
+        console.warn(
+          `Failed on model ${modelName} with key ending in ...${apiKey.slice(
+            -5
+          )}: ${error.message}`
+        );
+      }
+    }
+  }
+
+  throw new Error('All Gemini keys and models failed.');
 }
 
 module.exports = {
@@ -101,18 +109,12 @@ module.exports = {
         userId: user.id,
         channelId,
       });
-      if (deletedSession) {
-        return interaction.reply({
-          content:
-            '✅ Your conversation has ended and its memory has been cleared.',
-          flags: [MessageFlags.Ephemeral],
-        });
-      } else {
-        return interaction.reply({
-          content: "You don't have an active conversation to end.",
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
+      return interaction.reply({
+        content: deletedSession
+          ? '✅ Your conversation has ended and its memory has been cleared.'
+          : "You don't have an active conversation to end.",
+        flags: [MessageFlags.Ephemeral],
+      });
     }
 
     const prompt = interaction.options.getString('prompt');
@@ -152,8 +154,8 @@ module.exports = {
             .trim()
             .replace(/["*]/g, '');
           if (potentialTitle) title = potentialTitle;
-        } catch (titleError) {
-          console.log('Could not generate AI title, using prompt as fallback.');
+        } catch {
+          console.log('Failed to generate title. Using fallback.');
         }
       }
 
@@ -176,27 +178,25 @@ module.exports = {
       }
 
       const text = response.text();
-      if (!text) {
-        return interaction.editReply('The AI did not provide a text response.');
-      }
+      if (!text)
+        return interaction.editReply('The AI did not respond with text.');
 
-      const responseChunks = splitText(text);
-      const baseFooterText = `Model: ${modelName} | Temp: ${generationConfig.temperature.toFixed(
-        1
-      )} | Tokens: ${response.usageMetadata?.totalTokenCount ?? 'N/A'}`;
+      const chunks = splitText(text);
       let currentPage = 0;
+
+      const footerInfo = `Model: ${modelName} | Temp: ${
+        generationConfig.temperature
+      } | Tokens: ${response.usageMetadata?.totalTokenCount || 'N/A'}`;
 
       const generateEmbed = (page) =>
         new EmbedBuilder()
           .setColor(isNewChat ? '#00FF00' : '#0099FF')
           .setTitle(title)
           .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
-          .setDescription(responseChunks[page])
+          .setDescription(chunks[page])
           .setTimestamp()
           .setFooter({
-            text: `${baseFooterText} | Page ${page + 1}/${
-              responseChunks.length
-            }`,
+            text: `${footerInfo} | Page ${page + 1}/${chunks.length}`,
           })
           .addFields(
             page === 0
@@ -215,29 +215,29 @@ module.exports = {
             .setCustomId('next_page')
             .setLabel('➡️')
             .setStyle(ButtonStyle.Primary)
-            .setDisabled(page === responseChunks.length - 1)
+            .setDisabled(page === chunks.length - 1)
         );
 
       const message = await interaction.editReply({
         embeds: [generateEmbed(currentPage)],
-        components:
-          responseChunks.length > 1 ? [generateButtons(currentPage)] : [],
+        components: chunks.length > 1 ? [generateButtons(currentPage)] : [],
       });
 
-      if (responseChunks.length <= 1) return;
+      if (chunks.length <= 1) return;
 
       const collector = message.createMessageComponentCollector({
         componentType: ComponentType.Button,
-        time: 300000,
+        time: 5 * 60 * 1000,
       });
+
       collector.on('collect', async (i) => {
         if (i.user.id !== interaction.user.id) {
           return i.reply({
-            content: 'Only the command user can change pages.',
+            content: 'Only the original user can navigate this conversation.',
             flags: [MessageFlags.Ephemeral],
           });
         }
-        i.customId === 'prev_page' ? currentPage-- : currentPage++;
+        currentPage += i.customId === 'next_page' ? 1 : -1;
         await i.update({
           embeds: [generateEmbed(currentPage)],
           components: [generateButtons(currentPage)],
@@ -245,28 +245,27 @@ module.exports = {
       });
 
       collector.on('end', () => {
-        const finalComponents = generateButtons(currentPage).components.map(
-          (b) => b.setDisabled(true)
+        const disabledRow = new ActionRowBuilder().addComponents(
+          generateButtons(currentPage).components.map((btn) =>
+            btn.setDisabled(true)
+          )
         );
         message
           .edit({
             embeds: [generateEmbed(currentPage)],
-            components: [new ActionRowBuilder().addComponents(finalComponents)],
+            components: [disabledRow],
           })
           .catch(() => {});
       });
-    } catch (error) {
-      console.error('Error with Gemini API:', error);
-      const errorMessage =
-        'Sorry, an error occurred while contacting the AI. Please try again later.';
-      await interaction
-        .editReply(errorMessage)
-        .catch(() =>
-          interaction.reply({
-            content: errorMessage,
-            flags: [MessageFlags.Ephemeral],
-          })
-        );
+    } catch (err) {
+      console.error('Gemini API error:', err);
+      const failMsg = 'Sorry, something went wrong. Please try again later.';
+      await interaction.editReply(failMsg).catch(() =>
+        interaction.reply({
+          content: failMsg,
+          flags: [MessageFlags.Ephemeral],
+        })
+      );
     }
   },
 };
