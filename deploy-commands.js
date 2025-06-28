@@ -1,20 +1,29 @@
 const { REST, Routes } = require('discord.js');
 const fs = require('node:fs');
 const path = require('node:path');
-require('dotenv').config(); // Make sure it's at the top
+require('dotenv').config();
+
+// Make sure these are defined in your .env file
+const clientId = process.env.CLIENT_ID;
+const guildId = process.env.GUILD_ID;
+const token = process.env.DISCORD_TOKEN;
+
+if (!clientId || !guildId || !token) {
+  console.error(
+    'Error: CLIENT_ID, GUILD_ID, or DISCORD_TOKEN is missing from your .env file.'
+  );
+  process.exit(1); // Exit if essential variables are missing
+}
 
 const commands = [];
-// Grab all the command folders from the commands directory
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
 for (const folder of commandFolders) {
-  // Grab all the command files from the commands directory
   const commandsPath = path.join(foldersPath, folder);
   const commandFiles = fs
     .readdirSync(commandsPath)
     .filter((file) => file.endsWith('.js'));
-  // Grab the SlashCommandBuilder#toJSON() output of each command's data for deployment
   for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
     const command = require(filePath);
@@ -28,23 +37,22 @@ for (const folder of commandFolders) {
   }
 }
 
-// Construct and prepare an instance of the REST module
-const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+const rest = new REST().setToken(token);
 
-// and deploy your commands!
 (async () => {
   try {
     console.log(
-      `Started refreshing ${commands.length} application (/) commands.`
+      `Started refreshing ${commands.length} application (/) commands for your test server.`
     );
 
+    // THE FIX IS HERE: We use applicationGuildCommands instead
     const data = await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
+      Routes.applicationGuildCommands(clientId, guildId), // This targets your specific server
       { body: commands }
     );
 
     console.log(
-      `Successfully reloaded ${data.length} GLOBAL application (/) commands.`
+      `Successfully reloaded ${data.length} GUILD application (/) commands.`
     );
   } catch (error) {
     console.error(error);
