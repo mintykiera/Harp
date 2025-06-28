@@ -14,6 +14,7 @@ require('dotenv').config();
 const GEMINI_API_KEYS =
   process.env.GEMINI_API_KEYS?.split(',').map((key) => key.trim()) || [];
 const GEMINI_MODELS = [
+  'gemini-2.5-flash',
   'gemini-1.5-flash-latest',
   'gemini-1.5-pro-latest',
   'gemini-pro',
