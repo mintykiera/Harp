@@ -410,9 +410,15 @@ module.exports = {
       if (isChessMove(userInput)) {
         if (message.deletable) await message.delete().catch(() => {});
 
-        // Handle variations of castling
+        // Normalize user input for piece moves and castling
+        const firstChar = userInput.charAt(0);
+        if (/[nbrqk]/.test(firstChar)) {
+          // If it starts with a piece letter (lower or upper)
+          userInput = firstChar.toUpperCase() + userInput.slice(1);
+        }
+        // Handle variations of castling explicitly
         if (userInput.toLowerCase() === 'o-o') userInput = 'O-O';
-        if (userInput.toLowerCase() === 'o-o-o') userInput = 'O-O-O';
+        else if (userInput.toLowerCase() === 'o-o-o') userInput = 'O-O-O';
 
         const move = game.move(userInput, { sloppy: true });
 

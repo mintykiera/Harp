@@ -152,7 +152,24 @@ module.exports = {
         }
       }
 
-      const chatHistory = session ? session.history : [];
+      const chatHistory = session
+        ? session.history.map((entry) => {
+            // Clone the entry and ensure parts are also cleaned of _id
+            const cleanedEntry = { role: entry.role, parts: [] };
+            if (entry.parts && Array.isArray(entry.parts)) {
+              cleanedEntry.parts = entry.parts.map((part) => {
+                const { _id, __v, ...rest } = part.toObject
+                  ? part.toObject()
+                  : part; // Handle Mongoose subdocument and plain object
+                return rest;
+              });
+            }
+            const { _id, __v, ...restOfEntry } = entry.toObject
+              ? entry.toObject()
+              : entry; // Clean the content object itself
+            return { ...restOfEntry, ...cleanedEntry }; // Merge cleaned parts back
+          })
+        : [];
       let title = session
         ? session.title
         : `> ${prompt.slice(0, 250)}${prompt.length > 250 ? '...' : ''}`;
