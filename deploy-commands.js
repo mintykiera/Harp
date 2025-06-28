@@ -1,18 +1,28 @@
+// deploy-commands.js
 const { REST, Routes } = require('discord.js');
 const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config();
 
-// Make sure these are defined in your .env file
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
 const token = process.env.DISCORD_TOKEN;
 
-if (!clientId || !guildId || !token) {
+if (!clientId || !token) {
   console.error(
-    'Error: CLIENT_ID, GUILD_ID, or DISCORD_TOKEN is missing from your .env file.'
+    'Error: CLIENT_ID or DISCORD_TOKEN is missing from your .env file.'
   );
-  process.exit(1); // Exit if essential variables are missing
+  process.exit(1);
+}
+
+// Check if the '--global' flag was passed
+const isGlobalDeploy = process.argv.includes('--global');
+
+if (!isGlobalDeploy && !guildId) {
+  console.error(
+    'Error: GUILD_ID is missing from your .env file. For global deploy, run with the --global flag.'
+  );
+  process.exit(1);
 }
 
 const commands = [];
@@ -41,19 +51,22 @@ const rest = new REST().setToken(token);
 
 (async () => {
   try {
-    console.log(
-      `Started refreshing ${commands.length} application (/) commands for your test server.`
-    );
+    let route;
+    let logMessage;
 
-    // THE FIX IS HERE: We use applicationGuildCommands instead
-    const data = await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId), // This targets your specific server
-      { body: commands }
-    );
+    if (isGlobalDeploy) {
+      route = Routes.applicationCommands(clientId);
+      logMessage = `Started refreshing ${commands.length} GLOBAL application (/) commands.`;
+    } else {
+      route = Routes.applicationGuildCommands(clientId, guildId);
+      logMessage = `Started refreshing ${commands.length} application (/) commands for GUILD ${guildId}.`;
+    }
 
-    console.log(
-      `Successfully reloaded ${data.length} GUILD application (/) commands.`
-    );
+    console.log(logMessage);
+
+    const data = await rest.put(route, { body: commands });
+
+    console.log(`Successfully reloaded ${data.length} commands.`);
   } catch (error) {
     console.error(error);
   }

@@ -4,8 +4,9 @@
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
-    "deploy": "node deploy-commands.js",
-    "dev": "nodemon --exec \"npm run deploy && npm run start\""
+    "deploy:guild": "node deploy-commands.js",
+    "deploy:global": "node deploy-commands.js --global",
+    "dev": "nodemon --exec \"npm run deploy:guild && npm run start\""
   },
   "keywords": [],
   "author": "kieraesque",
