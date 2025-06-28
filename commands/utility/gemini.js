@@ -106,7 +106,6 @@ module.exports = {
       return interaction.reply({
         content:
           '✅ Your conversation has ended and its memory has been cleared.',
-        ephemeral: true,
       });
     }
 
@@ -234,7 +233,7 @@ module.exports = {
         if (i.user.id !== interaction.user.id) {
           return i.reply({
             content: 'Only the original user can navigate this response.',
-            ephemeral: true,
+            flags: [MessageFlags.Ephemeral],
           });
         }
         currentPage += i.customId === 'next_page' ? 1 : -1;
@@ -253,7 +252,12 @@ module.exports = {
       }`;
       await interaction
         .editReply({ content: failMsg })
-        .catch(() => interaction.reply({ content: failMsg, ephemeral: true }));
+        .catch(() =>
+          interaction.reply({
+            content: failMsg,
+            flags: [MessageFlags.Ephemeral],
+          })
+        );
     }
   },
 };
