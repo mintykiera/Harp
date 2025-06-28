@@ -57,7 +57,6 @@ module.exports = {
         });
     } catch (error) {
       console.error('Error granting access:', error);
-      // This was already correct, no change needed here.
       await interaction.editReply({
         content:
           'An error occurred while granting access. Please check my permissions and role hierarchy.',

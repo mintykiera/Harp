@@ -1,6 +1,8 @@
-// File: commands/moderation/kick.js
-
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+} = require('discord.js');
 const rules = require('../../rules.js'); // 1. Import the rules
 
 module.exports = {

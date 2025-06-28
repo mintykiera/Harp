@@ -1,6 +1,8 @@
-// File: commands/moderation/timeout.js
-
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+} = require('discord.js');
 const ms = require('ms');
 const rules = require('../../rules.js'); // 1. Import the rules
 

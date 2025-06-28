@@ -23,4 +23,4 @@ RUN tar -xf stockfish-ubuntu-x86-64-avx2.tar && \
   rm -rf stockfish
 
 # Define the command to start the application
-CMD ["npm", "start"]
+CMD ["npm", "run", "start"]

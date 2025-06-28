@@ -1,9 +1,8 @@
-// File: commands/moderation/infraction.js
-
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   EmbedBuilder,
+  MessageFlags,
 } = require('discord.js');
 const rules = require('../../rules.js'); // Go up one directory to find rules.js
 const { addInfraction, getInfractions } = require('../../infractionManager.js');
