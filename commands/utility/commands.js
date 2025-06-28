@@ -13,12 +13,6 @@ module.exports = {
     .setDescription('Lists all of my available commands by category.'),
 
   async execute(interaction) {
-    // --- CHANGE 2: Defer the reply as the VERY FIRST action. ---
-    await interaction.deferReply();
-
-    // The dynamic import line has been removed from here.
-
-    // Group commands by category
     const categories = new Map();
     const commandsToDisplay = interaction.client.commands.filter(
       (cmd) => cmd.data.name !== 'commands'
@@ -46,7 +40,6 @@ module.exports = {
 
     if (sortedCategories.length === 0) {
       embed.setDescription('There are no commands available to display.');
-      // This must now be an editReply since we deferred.
       return interaction.editReply({ embeds: [embed] });
     }
 

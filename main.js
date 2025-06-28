@@ -76,32 +76,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!command) return;
 
   try {
+    await interaction.deferReply();
     await command.execute(interaction);
     if (command.data.name === 'chess' && command.initGameCollector) {
-      if (interaction.deferred || interaction.replied) {
-        command.initGameCollector(interaction);
-      }
+      command.initGameCollector(interaction);
     }
   } catch (error) {
     console.error(`[COMMAND ERROR] ${command.data.name}:`, error);
-    try {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
+    await interaction
+      .editReply({
+        content: 'There was an error while executing this command!',
+      })
+      .catch((err) => {
+        console.warn(
+          '[ERROR HANDLER] editReply failed, trying followUp.',
+          err.message
+        );
+        return interaction.followUp({
           content: 'There was an error while executing this command!',
           flags: [MessageFlags.Ephemeral],
         });
-      } else {
-        await interaction.reply({
-          content: 'There was an error while executing this command!',
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-    } catch (err) {
-      console.warn(
-        '[ERROR HANDLER] Could not send error message. Suppressing.',
-        err.message
-      );
-    }
+      })
+      .catch((err) => {
+        console.error('[ERROR HANDLER] Could not send error message.', err);
+      });
   }
 });
 
