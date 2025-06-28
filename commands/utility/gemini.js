@@ -14,8 +14,7 @@ require('dotenv').config();
 const GEMINI_API_KEYS =
   process.env.GEMINI_API_KEYS?.split(',').map((key) => key.trim()) || [];
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash-latest', // Preferred model first
   'gemini-1.5-pro-latest',
   'gemini-pro',
 ];
@@ -37,9 +36,7 @@ function splitText(text, { maxLength = 4096 } = {}) {
   return chunks;
 }
 
-// Corrected generateWithFallback function
 async function generateWithFallback(prompt, history = null) {
-  // Changed default to null
   for (const apiKey of GEMINI_API_KEYS) {
     const genAI = new GoogleGenerativeAI(apiKey);
     for (const modelName of GEMINI_MODELS) {
@@ -49,18 +46,10 @@ async function generateWithFallback(prompt, history = null) {
           generationConfig,
         });
 
-        // Use model.generateContent if no history is provided or if history is an empty array.
-        // This is for single-turn prompts (like title generation) or the very first message of a new chat.
-        if (
-          history === null ||
-          (Array.isArray(history) && history.length === 0)
-        ) {
-          const result = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }], // Explicitly define user role and parts
-          });
-          return { response: result.response, modelName, apiKey };
+        if (!history || history.length === 0) {
+          const result = await model.generateContent(prompt);
+          return { response: result.response, chat: null, modelName, apiKey };
         } else {
-          // Otherwise, start a chat with the provided history for multi-turn conversations.
           const chat = model.startChat({ history });
           const result = await chat.sendMessage(prompt);
           return { response: result.response, chat, modelName, apiKey };
@@ -71,11 +60,17 @@ async function generateWithFallback(prompt, history = null) {
             -5
           )}: ${error.message}`
         );
+        // If it's a safety error, stop trying other models as it's content-related
+        if (error.message.includes('SAFETY')) {
+          throw new Error(
+            'The response was blocked due to safety settings. Please rephrase your prompt.'
+          );
+        }
       }
     }
   }
 
-  throw new Error('All Gemini keys and models failed.');
+  throw new Error('All Gemini keys and models failed to generate a response.');
 }
 
 module.exports = {
@@ -124,7 +119,7 @@ module.exports = {
         content: deletedSession
           ? '✅ Your conversation has ended and its memory has been cleared.'
           : "You don't have an active conversation to end.",
-        flags: [MessageFlags.Ephemeral],
+        ephemeral: true,
       });
     }
 
@@ -139,78 +134,85 @@ module.exports = {
         session = await Gemini.findOne({ userId: user.id, channelId });
         if (session) {
           return interaction.editReply(
-            'You already have a conversation here. Use `/gemini reply` or `/gemini end`.'
+            'You already have an active conversation here. Use `/gemini reply` or end it with `/gemini end`.'
           );
         }
       } else {
+        // This is the 'reply' subcommand
         session = await Gemini.findOne({ userId: user.id, channelId });
         if (!session) {
           return interaction.editReply(
-            "You don't have an active conversation. Start one with `/gemini start`."
+            "You don't have an active conversation to reply to. Start one with `/gemini start`."
           );
         }
       }
 
+      // ========================== THE FIX IS HERE ==========================
+      // Manually construct a "clean" history object to pass to the API.
+      // This prevents any extra Mongoose fields from causing issues.
       const chatHistory = session
-        ? session.history.map((entry) => entry.toObject())
+        ? session.history.map((h) => ({
+            role: h.role,
+            // Ensure the 'parts' array is also clean
+            parts: h.parts.map((p) => ({ text: p.text })),
+          }))
         : [];
+      // =====================================================================
+
       let title = session
         ? session.title
         : `> ${prompt.slice(0, 250)}${prompt.length > 250 ? '...' : ''}`;
 
       if (isNewChat) {
         try {
-          const titlePrompt = `Generate a very short, 3-5 word title for this prompt. Return only the title text. Prompt: "${prompt}"`;
-          // Explicitly pass null for history for this one-off title generation
-          const titleResult = await generateWithFallback(titlePrompt, null);
+          const titlePrompt = `Generate a very short, 3-5 word title for this prompt. Return only the title text, nothing else. Prompt: "${prompt}"`;
+          const titleResult = await generateWithFallback(titlePrompt, null); // No history for title gen
           const potentialTitle = titleResult.response
             .text()
             .trim()
             .replace(/["*]/g, '');
           if (potentialTitle) title = potentialTitle;
         } catch {
-          console.log('Failed to generate title. Using fallback.');
+          console.warn('Failed to generate title. Using fallback.');
         }
       }
 
-      // This call to generateWithFallback will now correctly use model.generateContent if chatHistory is empty,
-      // or model.startChat if chatHistory has existing entries.
       const {
         response,
-        chat: updatedChat,
+        chat: updatedChat, // This will be null for a new chat, and a chat object for a reply
         modelName,
       } = await generateWithFallback(prompt, chatHistory);
 
+      const responseText = response.text();
+      if (!responseText) {
+        return interaction.editReply({
+          content: 'The AI returned an empty response. Please try again.',
+        });
+      }
+
       if (isNewChat) {
+        // For a new chat, we manually construct the history and create the document.
+        const newHistory = [
+          { role: 'user', parts: [{ text: prompt }] },
+          { role: 'model', parts: [{ text: responseText }] },
+        ];
         await Gemini.create({
           userId: user.id,
           channelId,
           title,
-          // If updatedChat is null here, it means generateContent was used directly.
-          // In that case, we need to manually create the history entry for the first turn.
-          history: updatedChat
-            ? updatedChat.getHistory()
-            : [
-                { role: 'user', parts: [{ text: prompt }] },
-                { role: 'model', parts: [{ text: response.text() }] },
-              ],
+          history: newHistory,
         });
       } else {
-        // updatedChat will always be present if history was not null/empty for a reply
+        // For a reply, the `updatedChat` object will exist. We get its full history and save it.
+        // The Google AI SDK automatically includes the new user prompt and model response.
         session.history = updatedChat.getHistory();
         await session.save();
       }
 
-      const text = response.text();
-      if (!text)
-        return interaction.editReply('The AI did not respond with text.');
-
-      const chunks = splitText(text);
+      const chunks = splitText(responseText);
       let currentPage = 0;
 
-      const footerInfo = `Model: ${modelName} | Temp: ${
-        generationConfig.temperature
-      } | Tokens: ${response.usageMetadata?.totalTokenCount || 'N/A'}`;
+      const footerInfo = `Model: ${modelName} | Temp: ${generationConfig.temperature}`;
 
       const generateEmbed = (page) =>
         new EmbedBuilder()
@@ -224,7 +226,7 @@ module.exports = {
           })
           .addFields(
             page === 0
-              ? { name: 'Your Prompt', value: `> ${prompt.slice(0, 1020)}` }
+              ? { name: 'Your Prompt', value: `> ${prompt.slice(0, 1020)}...` }
               : []
           );
 
@@ -257,8 +259,8 @@ module.exports = {
       collector.on('collect', async (i) => {
         if (i.user.id !== interaction.user.id) {
           return i.reply({
-            content: 'Only the original user can navigate this conversation.',
-            flags: [MessageFlags.Ephemeral],
+            content: 'Only the original user can navigate this response.',
+            ephemeral: true,
           });
         }
         currentPage += i.customId === 'next_page' ? 1 : -1;
@@ -269,27 +271,16 @@ module.exports = {
       });
 
       collector.on('end', () => {
-        const disabledRow = new ActionRowBuilder().addComponents(
-          generateButtons(currentPage).components.map((btn) =>
-            btn.setDisabled(true)
-          )
-        );
-        message
-          .edit({
-            embeds: [generateEmbed(currentPage)],
-            components: [disabledRow],
-          })
-          .catch(() => {});
+        message.edit({ components: [] }).catch(() => {});
       });
     } catch (err) {
-      console.error('Gemini API error:', err);
-      const failMsg = 'Sorry, something went wrong. Please try again later.';
-      await interaction.editReply(failMsg).catch(() =>
-        interaction.reply({
-          content: failMsg,
-          flags: [MessageFlags.Ephemeral],
-        })
-      );
+      console.error('Gemini command error:', err); // Better logging
+      const failMsg = `Sorry, something went wrong. ${
+        err.message.includes('SAFETY') ? err.message : 'Please try again later.'
+      }`;
+      await interaction
+        .editReply({ content: failMsg })
+        .catch(() => interaction.reply({ content: failMsg, ephemeral: true }));
     }
   },
 };
