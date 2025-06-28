@@ -179,12 +179,24 @@ module.exports = {
           ],
         });
       } else {
-        const newHistoryFromSDK = updatedChat.getHistory();
+        const newHistoryFromSDK = await updatedChat.getHistory();
 
-        session.history = newHistoryFromSDK.map((entry) => ({
-          role: entry.role,
-          parts: entry.parts.map((part) => ({ text: part.text })),
-        }));
+        // Now that newHistoryFromSDK is guaranteed to be an array, we can safely map it.
+        if (Array.isArray(newHistoryFromSDK)) {
+          session.history = newHistoryFromSDK.map((entry) => ({
+            role: entry.role,
+            parts: entry.parts.map((part) => ({ text: part.text })),
+          }));
+        } else {
+          // This is a fallback in case the SDK ever returns something unexpected.
+          console.error(
+            "SDK's getHistory() did not return an array:",
+            newHistoryFromSDK
+          );
+          throw new Error(
+            'Could not retrieve updated history from the AI service.'
+          );
+        }
 
         await session.save();
       }
@@ -250,14 +262,12 @@ module.exports = {
       const failMsg = `Sorry, something went wrong. ${
         err.message.includes('SAFETY') ? err.message : 'Please try again later.'
       }`;
-      await interaction
-        .editReply({ content: failMsg })
-        .catch(() =>
-          interaction.reply({
-            content: failMsg,
-            flags: [MessageFlags.Ephemeral],
-          })
-        );
+      await interaction.editReply({ content: failMsg }).catch(() =>
+        interaction.reply({
+          content: failMsg,
+          flags: [MessageFlags.Ephemeral],
+        })
+      );
     }
   },
 };
