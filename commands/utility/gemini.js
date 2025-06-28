@@ -152,24 +152,7 @@ module.exports = {
       }
 
       const chatHistory = session
-        ? session.history.map((entry) => {
-            // Mongoose subdocuments can be tricky. Use toObject() if available.
-            const entryObj = entry.toObject ? entry.toObject() : entry;
-
-            // Clean the parts array first
-            const cleanedParts = [];
-            if (entryObj.parts && Array.isArray(entryObj.parts)) {
-              for (const part of entryObj.parts) {
-                const partObj = part.toObject ? part.toObject() : part;
-                const { _id, __v, ...restOfPart } = partObj; // Destructure to exclude _id and __v
-                cleanedParts.push(restOfPart);
-              }
-            }
-
-            // Clean the overall history entry object itself
-            const { _id, __v, ...restOfEntry } = entryObj; // Destructure to exclude _id and __v
-            return { ...restOfEntry, parts: cleanedParts }; // Return the cleaned entry with its cleaned parts
-          })
+        ? session.history.map((entry) => entry.toObject())
         : [];
       let title = session
         ? session.title
