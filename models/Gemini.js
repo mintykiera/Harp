@@ -1,21 +1,29 @@
 const mongoose = require('mongoose');
 
-// Define the schema for a 'part' within a history entry
-// CRITICAL: {_id: false} prevents Mongoose from adding _id to each part
 const HistoryPartSchema = new mongoose.Schema(
   {
-    text: { type: String, required: true }, // Added required: true for good measure
-    // Add other part types if needed in the future (e.g., inline_data, file_data)
+    text: {
+      type: String,
+      required: [true, 'The text content of a history part is required.'],
+    },
   },
   { _id: false }
 );
 
-// Define the schema for a 'history' entry (role + parts)
-// CRITICAL: {_id: false} prevents Mongoose from adding _id to each history entry
 const HistoryEntrySchema = new mongoose.Schema(
   {
-    role: { type: String, required: true }, // Added required: true for good measure
-    parts: [HistoryPartSchema], // Use the named schema here
+    role: {
+      type: String,
+      required: [
+        true,
+        'The role (`user` or `model`) is required for each history entry.',
+      ],
+      enum: ['user', 'model'],
+    },
+    parts: {
+      type: [HistoryPartSchema],
+      required: true,
+    },
   },
   { _id: false }
 );
@@ -34,10 +42,14 @@ const GeminiSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  history: [HistoryEntrySchema], // Use the named schema for the array
+  history: {
+    type: [HistoryEntrySchema],
+    default: [],
+  },
   createdAt: {
     type: Date,
     default: Date.now,
+    expires: '7d',
   },
 });
 
