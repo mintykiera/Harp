@@ -1,14 +1,10 @@
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  MessageFlags,
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('untimeout')
     .setDescription('Removes the timeout from a user.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers) // Same permission as timeout
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .addUserOption((option) =>
       option
         .setName('target')
@@ -22,37 +18,32 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const target = interaction.options.getUser('target');
-    const member = await interaction.guild.members.fetch(target.id);
+    const member = await interaction.guild.members
+      .fetch(target.id)
+      .catch(() => null);
     const reason =
       interaction.options.getString('reason') || 'No reason provided.';
 
     if (!member) {
-      return interaction.reply({
+      return interaction.editReply({
         content: "I can't find that member in the server.",
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
-    // Check if the user is actually timed out
     if (!member.isCommunicationDisabled()) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'This user is not currently timed out.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
     try {
-      // To remove a timeout, pass `null` as the duration.
       await member.timeout(null, reason);
 
-      await interaction.reply({
+      await interaction.editReply({
         content: `Successfully removed the timeout from ${target.tag}. Reason: ${reason}`,
-        flags: [MessageFlags.Ephemeral],
       });
 
-      // (Optional but recommended) DM the user
       await target
         .send(
           `Your timeout in **${interaction.guild.name}** has been removed by a moderator.`
@@ -63,7 +54,8 @@ module.exports = {
     } catch (error) {
       console.error(error);
       await interaction.editReply({
-        content: 'An unexpected error occurred while processing the timeout.',
+        content:
+          'An unexpected error occurred while processing the timeout removal.',
       });
     }
   },

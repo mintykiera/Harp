@@ -1,8 +1,4 @@
-const {
-  SlashCommandBuilder,
-  PermissionsBitField,
-  MessageFlags, // <--- STEP 1: IMPORT IT HERE
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -22,27 +18,21 @@ module.exports = {
         .setDescription('Only delete messages from this user.')
         .setRequired(false)
     )
-    // This ensures only members with "Manage Messages" permission can see/use it
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageMessages),
 
   async execute(interaction) {
-    // Check if the user executing the command has the required permission
     if (
       !interaction.member.permissions.has(
         PermissionsBitField.Flags.ManageMessages
       )
     ) {
-      return interaction.reply({
+      return interaction.editReply({
         content: "You don't have permission to use this command.",
-        flags: [MessageFlags.Ephemeral], // <--- Use flags for the error message too
       });
     }
 
     const amount = interaction.options.getInteger('amount');
     const user = interaction.options.getUser('user');
-
-    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer ephemerally
-
     const channel = interaction.channel;
     const messages = await channel.messages.fetch({ limit: amount });
 
@@ -60,13 +50,11 @@ module.exports = {
     }
 
     try {
-      const deletedMessages = await channel.bulkDelete(messagesToDelete, true); // `true` filters out messages older than 14 days
-
+      const deletedMessages = await channel.bulkDelete(messagesToDelete, true);
       await interaction.editReply({
         content: `✅ Successfully deleted **${
           deletedMessages.size
         }** message(s)${user ? ` from ${user.tag}` : ''}.`,
-        // No flags needed here since we deferred ephemerally already
       });
     } catch (error) {
       console.error('Error during bulk delete:', error);

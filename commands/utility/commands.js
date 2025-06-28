@@ -1,10 +1,4 @@
-const {
-  SlashCommandBuilder,
-  EmbedBuilder,
-  MessageFlags,
-} = require('discord.js');
-// --- CHANGE 1: Use a standard require() at the top of the file. ---
-// This loads the module when the bot starts, not during the command.
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { capitalCase } = require('change-case');
 
 module.exports = {
@@ -26,7 +20,6 @@ module.exports = {
       categories.get(category).push(cmd);
     });
 
-    // Sort categories alphabetically
     const sortedCategories = [...categories.keys()].sort((a, b) =>
       a.localeCompare(b)
     );
@@ -43,7 +36,6 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // Add a field for each category
     for (const category of sortedCategories) {
       const commandsInCategory = categories.get(category);
       commandsInCategory.sort((a, b) => a.data.name.localeCompare(b.data.name));
@@ -57,7 +49,6 @@ module.exports = {
       });
     }
 
-    // Use editReply to send the final response.
     await interaction.editReply({
       embeds: [embed],
     });

@@ -45,16 +45,15 @@ async function generateWithFallback(prompt, history = null) {
           model: modelName,
           generationConfig,
         });
-        if (!history || history.length === 0) {
-          const result = await model.generateContent(prompt);
-          return { response: result.response, chat: null, modelName };
-        } else {
-          const chat = model.startChat({ history });
-          const result = await chat.sendMessage(prompt);
-          return { response: result.response, chat, modelName };
-        }
+        const chat = model.startChat({ history: history || [] });
+        const result = await chat.sendMessage(prompt);
+        return { response: result.response, chat, modelName };
       } catch (error) {
-        console.warn(`Model ${modelName} failed: ${error.message}`);
+        console.warn(
+          `Model ${modelName} with key ending in ${apiKey.slice(-4)} failed: ${
+            error.message
+          }`
+        );
         if (error.message.includes('SAFETY')) {
           throw new Error('Response blocked due to safety settings.');
         }
@@ -103,49 +102,41 @@ module.exports = {
 
     if (subcommand === 'end') {
       await Gemini.findOneAndDelete({ userId: user.id, channelId });
-      return interaction.reply({
+      return interaction.editReply({
         content:
           '✅ Your conversation has ended and its memory has been cleared.',
       });
     }
 
     const prompt = interaction.options.getString('prompt');
-    await interaction.deferReply();
 
     try {
       const isNewChat = subcommand === 'start';
       const session = await Gemini.findOne({ userId: user.id, channelId });
 
-      if (isNewChat) {
-        if (session) {
-          return interaction.editReply(
-            'You already have a conversation here. Use `/gemini reply` or `/gemini end`.'
-          );
-        }
-      } else {
-        // 'reply' subcommand
-        if (!session) {
-          return interaction.editReply(
-            "You don't have an active conversation. Start one with `/gemini start`."
-          );
-        }
+      if (isNewChat && session) {
+        return interaction.editReply(
+          'You already have a conversation here. Use `/gemini reply` or `/gemini end`.'
+        );
+      }
+      if (!isNewChat && !session) {
+        return interaction.editReply(
+          "You don't have an active conversation. Start one with `/gemini start`."
+        );
       }
 
       const chatHistory =
-        session?.history
-          ?.map((entry) => ({
-            role: entry.role,
-            parts: entry.parts.map((part) => ({ text: part.text })),
-          }))
-          .filter(Boolean) || [];
+        session?.history?.map((entry) => ({
+          role: entry.role,
+          parts: entry.parts.map((part) => ({ text: part.text })),
+        })) || [];
 
       let title = session?.title || `> ${prompt.slice(0, 250)}...`;
-
       if (isNewChat) {
         try {
           const titlePrompt = `Generate a very short, 3-5 word title for this prompt. Return only the title text. Prompt: "${prompt}"`;
-          const titleResult = await generateWithFallback(titlePrompt, null);
-          const potentialTitle = titleResult.response
+          const titleGen = await generateWithFallback(titlePrompt);
+          const potentialTitle = titleGen.response
             .text()
             .trim()
             .replace(/["*]/g, '');
@@ -155,55 +146,42 @@ module.exports = {
         }
       }
 
-      const {
-        response,
-        chat: updatedChat,
-        modelName,
-      } = await generateWithFallback(prompt, chatHistory);
-
+      const { response, chat, modelName } = await generateWithFallback(
+        prompt,
+        chatHistory
+      );
       const responseText = response.text();
+
       if (!responseText) {
         return interaction.editReply({
           content: 'The AI returned an empty response.',
         });
       }
 
+      const newHistory = await chat.getHistory();
+      const updatedHistory = Array.isArray(newHistory)
+        ? newHistory.map((entry) => ({
+            role: entry.role,
+            parts: entry.parts.map((part) => ({ text: part.text })),
+          }))
+        : [];
+
       if (isNewChat) {
         await Gemini.create({
           userId: user.id,
           channelId,
           title,
-          history: [
-            { role: 'user', parts: [{ text: prompt }] },
-            { role: 'model', parts: [{ text: responseText }] },
-          ],
+          history: updatedHistory,
         });
       } else {
-        const newHistoryFromSDK = await updatedChat.getHistory();
-
-        // Now that newHistoryFromSDK is guaranteed to be an array, we can safely map it.
-        if (Array.isArray(newHistoryFromSDK)) {
-          session.history = newHistoryFromSDK.map((entry) => ({
-            role: entry.role,
-            parts: entry.parts.map((part) => ({ text: part.text })),
-          }));
-        } else {
-          // This is a fallback in case the SDK ever returns something unexpected.
-          console.error(
-            "SDK's getHistory() did not return an array:",
-            newHistoryFromSDK
-          );
-          throw new Error(
-            'Could not retrieve updated history from the AI service.'
-          );
-        }
-
+        session.history = updatedHistory;
         await session.save();
       }
 
       const chunks = splitText(responseText);
       let currentPage = 0;
       const footerInfo = `Model: ${modelName} | Temp: ${generationConfig.temperature}`;
+
       const generateEmbed = (page) =>
         new EmbedBuilder()
           .setColor(isNewChat ? '#00FF00' : '#0099FF')
@@ -214,11 +192,12 @@ module.exports = {
           .setFooter({
             text: `${footerInfo} | Page ${page + 1}/${chunks.length}`,
           })
-          .addFields(
+          .setFields(
             page === 0
               ? { name: 'Your Prompt', value: `> ${prompt.slice(0, 1020)}...` }
               : []
           );
+
       const generateButtons = (page) =>
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -232,11 +211,14 @@ module.exports = {
             .setStyle(ButtonStyle.Primary)
             .setDisabled(page === chunks.length - 1)
         );
+
       const message = await interaction.editReply({
         embeds: [generateEmbed(currentPage)],
         components: chunks.length > 1 ? [generateButtons(currentPage)] : [],
       });
+
       if (chunks.length <= 1) return;
+
       const collector = message.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: 5 * 60 * 1000,
@@ -245,7 +227,7 @@ module.exports = {
         if (i.user.id !== interaction.user.id) {
           return i.reply({
             content: 'Only the original user can navigate this response.',
-            flags: [MessageFlags.Ephemeral],
+            ephemeral: true,
           });
         }
         currentPage += i.customId === 'next_page' ? 1 : -1;
@@ -262,12 +244,7 @@ module.exports = {
       const failMsg = `Sorry, something went wrong. ${
         err.message.includes('SAFETY') ? err.message : 'Please try again later.'
       }`;
-      await interaction.editReply({ content: failMsg }).catch(() =>
-        interaction.reply({
-          content: failMsg,
-          flags: [MessageFlags.Ephemeral],
-        })
-      );
+      await interaction.editReply({ content: failMsg });
     }
   },
 };

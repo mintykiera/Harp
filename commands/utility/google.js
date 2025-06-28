@@ -47,8 +47,6 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply();
-
     if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
       console.error('ERROR: Google API keys are missing from .env file.');
       return interaction.editReply({
@@ -58,7 +56,6 @@ module.exports = {
 
     const query = interaction.options.getString('query');
 
-    // Log search in user history
     try {
       await User.findOneAndUpdate(
         { userId: interaction.user.id },
@@ -77,7 +74,6 @@ module.exports = {
       console.error('Failed to log Google search to DB:', dbError);
     }
 
-    // Prefetch up to 50 results
     const allResults = [];
     for (let start = 1; start <= MAX_RESULTS; start += 10) {
       const batch = await fetchGoogleResults(query, start);
@@ -95,7 +91,6 @@ module.exports = {
     const generatePayload = (page) => {
       const startIndex = page * 10;
       const pageResults = allResults.slice(startIndex, startIndex + 10);
-
       const embed = new EmbedBuilder()
         .setColor('#4285F4')
         .setTitle(`🔍 Search results for: "${query}"`)
@@ -124,22 +119,16 @@ module.exports = {
           .setStyle(ButtonStyle.Primary)
           .setDisabled(page >= totalPages - 1)
       );
-
-      return {
-        embeds: [embed],
-        components: totalPages > 1 ? [row] : [],
-      };
+      return { embeds: [embed], components: totalPages > 1 ? [row] : [] };
     };
 
     const message = await interaction.editReply(generatePayload(currentPage));
-
     if (totalPages <= 1) return;
 
     const collector = message.createMessageComponentCollector({
       componentType: ComponentType.Button,
       time: 90_000,
     });
-
     collector.on('collect', async (i) => {
       if (i.user.id !== interaction.user.id) {
         return i.reply({
@@ -148,21 +137,17 @@ module.exports = {
           flags: [MessageFlags.Ephemeral],
         });
       }
-
-      const isNext = i.customId === 'next_page';
-      currentPage += isNext ? 1 : -1;
-
-      const updatedPayload = generatePayload(currentPage);
-      await i.update(updatedPayload);
+      currentPage += i.customId === 'next_page' ? 1 : -1;
+      await i.update(generatePayload(currentPage));
     });
 
     collector.on('end', async () => {
       try {
-        const disabled = generatePayload(currentPage);
-        disabled.components.forEach((row) =>
+        const finalPayload = generatePayload(currentPage);
+        finalPayload.components.forEach((row) =>
           row.components.forEach((btn) => btn.setDisabled(true))
         );
-        await message.edit(disabled);
+        await message.edit(finalPayload);
       } catch (err) {
         console.error('Failed to disable buttons after collector end:', err);
       }

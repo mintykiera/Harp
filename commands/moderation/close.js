@@ -16,31 +16,21 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // --- STEP 1: Defer the reply IMMEDIATELY ---
-    // This acknowledges the interaction and prevents the timeout error.
-    // We will make the final messages public, so a public defer is fine.
-    await interaction.deferReply();
-
     const { client, channel } = interaction;
 
-    // --- STEP 2: Now, perform your checks ---
     if (!client.openTickets.has(channel.id)) {
-      // Since we deferred, we MUST use editReply for the error message.
-      // We also add the ephemeral flag here to make this error message private.
       return interaction.editReply({
         content: 'This command can only be used in a ticket channel.',
-        flags: [MessageFlags.Ephemeral],
+        flags: [MessageFlags.Ephemeral], // Make error ephemeral via followUp if needed, but this is okay.
       });
     }
 
-    // If we get here, it's a valid ticket channel.
     const userId = client.openTickets.get(channel.id);
     const reason =
       interaction.options.getString('reason') || 'Ticket closed by staff.';
 
     try {
-      // Notify the user that the ticket is closing
-      const user = await client.users.fetch(userId);
+      const user = await client.users.fetch(userId).catch(() => null);
       if (user) {
         await user
           .send(
@@ -55,7 +45,6 @@ module.exports = {
         content: 'This ticket will be deleted in 3 seconds...',
       });
 
-      // Wait 10 seconds before deleting the channel
       setTimeout(() => {
         channel
           .delete(reason)

@@ -1,8 +1,4 @@
-const {
-  SlashCommandBuilder,
-  EmbedBuilder,
-  MessageFlags,
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const User = require('../../models/User');
 
 module.exports = {
@@ -17,36 +13,27 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // 1. Determine the target user. If no user is mentioned, it defaults to the command user.
     const targetUser = interaction.options.getUser('user') || interaction.user;
 
-    // 2. Handle the case where the target is a bot.
     if (targetUser.bot) {
-      return interaction.reply({
+      return interaction.editReply({
         content: "Bots don't have game profiles!",
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
-    // 3. Fetch the user's profile from the database.
     const userProfile = await User.findOne({ userId: targetUser.id });
-
-    // 4. Handle the case where the user has never played a game.
     if (!userProfile) {
-      return interaction.reply({
+      return interaction.editReply({
         content: `${targetUser.username} hasn't played any games yet.`,
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
-    // 5. If a profile exists, extract and calculate stats.
     const { elo, stats } = userProfile;
     const totalGames = stats.wins + stats.losses + stats.draws;
     const winRate = totalGames === 0 ? 0 : (stats.wins / totalGames) * 100;
 
-    // 6. Build the profile embed.
     const profileEmbed = new EmbedBuilder()
-      .setColor('#5865F2') // A nice Discord blue
+      .setColor('#5865F2')
       .setTitle(`${targetUser.username}'s Profile`)
       .setThumbnail(targetUser.displayAvatarURL())
       .addFields(
@@ -60,7 +47,6 @@ module.exports = {
       )
       .setTimestamp();
 
-    // 7. Send the reply.
-    await interaction.reply({ embeds: [profileEmbed] });
+    await interaction.editReply({ embeds: [profileEmbed] });
   },
 };

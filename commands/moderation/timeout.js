@@ -1,10 +1,6 @@
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  MessageFlags,
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const ms = require('ms');
-const rules = require('../../rules.js'); // 1. Import the rules
+const rules = require('../../rules.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -23,7 +19,6 @@ module.exports = {
         .setDescription('e.g., 10m, 1h, 1d (max 28d)')
         .setRequired(true)
     )
-    // 2. Change 'reason' to 'rule' with choices
     .addStringOption((option) =>
       option
         .setName('rule')
@@ -31,28 +26,25 @@ module.exports = {
         .setRequired(true)
         .setChoices(...rules)
     )
-    // 3. (Recommended) Add an optional details field
     .addStringOption((option) =>
       option
         .setName('details')
         .setDescription('Provide specific details or message link for the log')
     ),
   async execute(interaction) {
-    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const target = interaction.options.getUser('target');
-    const member = await interaction.guild.members.fetch(target.id);
+    const member = await interaction.guild.members
+      .fetch(target.id)
+      .catch(() => null);
     const durationString = interaction.options.getString('duration');
     const rule = interaction.options.getString('rule');
     const details =
       interaction.options.getString('details') || 'No additional details.';
-
-    // 4. Combine the rule and details for a clean reason
     const reason = `Rule: ${rule}. Details: ${details}`;
 
     if (!member) {
-      return interaction.reply({
+      return interaction.editReply({
         content: "I can't find that member in the server.",
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -63,25 +55,23 @@ module.exports = {
       durationMs < 5000 ||
       durationMs > 28 * 24 * 60 * 60 * 1000
     ) {
-      return interaction.reply({
+      return interaction.editReply({
         content:
           'Invalid duration. Please provide a valid duration between 5 seconds and 28 days (e.g., 10m, 1h, 3d).',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
     if (!member.moderatable) {
-      return interaction.reply({
+      return interaction.editReply({
         content:
           'I cannot timeout this user. They may have a higher role than me.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
     await member.timeout(durationMs, reason);
 
     await interaction.editReply({
-      content: 'An unexpected error occurred while processing the timeout.',
+      content: `Successfully timed out ${target.tag} for ${durationString}. Reason: ${reason}`,
     });
   },
 };

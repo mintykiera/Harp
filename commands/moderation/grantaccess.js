@@ -1,8 +1,4 @@
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  MessageFlags,
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const config = require('../../config.js');
 
 module.exports = {
@@ -20,32 +16,27 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // We defer here. This is our ONE initial reply.
-    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-
     const targetUser = interaction.options.getUser('target');
-    const member = await interaction.guild.members.fetch(targetUser.id);
+    const member = await interaction.guild.members
+      .fetch(targetUser.id)
+      .catch(() => null);
 
     if (!member) {
-      // FIX #1: Change .reply() to .editReply()
       return interaction.editReply({
         content: 'Could not find that user in the server.',
       });
     }
 
     try {
-      // Use Promise.all to perform role changes concurrently
       await Promise.all([
         member.roles.add(config.verifiedRoleId),
         member.roles.remove(config.unverifiedRoleId),
       ]);
 
-      // FIX #2: Change .reply() to .editReply()
       await interaction.editReply({
         content: `Successfully verified ${targetUser.tag}. They now have access to the server.`,
       });
 
-      // Optionally, DM the user to let them know they've been verified
       await targetUser
         .send(
           `Congratulations! You have been verified in **${interaction.guild.name}**.`

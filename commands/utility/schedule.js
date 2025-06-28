@@ -1,12 +1,8 @@
-// File: commands/utility/schedule.js - Corrected Version
-
-// --- THE FIX IS HERE: We added MessageFlags to the import list ---
 const {
   SlashCommandBuilder,
   EmbedBuilder,
   PermissionsBitField,
   ChannelType,
-  MessageFlags,
 } = require('discord.js');
 const chrono = require('chrono-node');
 
@@ -23,16 +19,14 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('when')
-        .setDescription(
-          'When to send? E.g., "5pm", "tomorrow 9:30am", "June 26 9:00 AM"'
-        )
+        .setDescription('When to send? E.g., "5pm", "tomorrow 9:30am"')
         .setRequired(true)
     )
     .addChannelOption((option) =>
       option
         .setName('channel')
         .setDescription(
-          'The channel to send the message in (defaults to current channel).'
+          'The channel to send the message in (defaults to current).'
         )
         .addChannelTypes(ChannelType.GuildText)
     ),
@@ -43,9 +37,8 @@ module.exports = {
         PermissionsBitField.Flags.ManageWebhooks
       )
     ) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'I need the "Manage Webhooks" permission to do this!',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -59,28 +52,23 @@ module.exports = {
     });
 
     if (!parsedDate) {
-      return interaction.reply({
+      return interaction.editReply({
         content:
           'I could not understand that date/time format. Please try something like "5pm" or "tomorrow at 9am".',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
     if (parsedDate.getTime() <= Date.now()) {
-      return interaction.reply({
+      return interaction.editReply({
         content:
           'The time you provided is in the past. Please schedule for a future time.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
     const delayInMs = parsedDate.getTime() - Date.now();
-
-    const maxDelay = 30 * 24 * 60 * 60 * 1000;
-    if (delayInMs > maxDelay) {
-      return interaction.reply({
+    if (delayInMs > 30 * 24 * 60 * 60 * 1000) {
+      return interaction.editReply({
         content: 'You can only schedule messages up to 30 days in the future.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -98,36 +86,27 @@ module.exports = {
         text: 'Note: If the bot restarts, this schedule will be cancelled.',
       });
 
-    // --- FIX APPLIED HERE TOO ---
-    await interaction.reply({
-      embeds: [confirmationEmbed],
-    });
+    await interaction.editReply({ embeds: [confirmationEmbed] });
 
-    // --- Scheduling Logic (no changes needed here) ---
     setTimeout(async () => {
       try {
         const member = await interaction.guild.members.fetch(
           interaction.user.id
         );
-        const nickname = member.displayName;
-        const avatar = member.user.displayAvatarURL({ dynamic: true });
-
         const webhooks = await targetChannel.fetchWebhooks();
         let webhook = webhooks.find(
           (wh) => wh.owner.id === interaction.client.user.id
         );
-
         if (!webhook) {
           webhook = await targetChannel.createWebhook({
             name: 'Scheduler Bot',
             avatar: interaction.client.user.displayAvatarURL(),
           });
         }
-
         await webhook.send({
           content: messageContent,
-          username: nickname,
-          avatarURL: avatar,
+          username: member.displayName,
+          avatarURL: member.user.displayAvatarURL({ dynamic: true }),
         });
       } catch (error) {
         console.error('Failed to send scheduled message:', error);
