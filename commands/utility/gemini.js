@@ -1,4 +1,3 @@
-// ✅ Fixed gemini.js
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -154,20 +153,22 @@ module.exports = {
 
       const chatHistory = session
         ? session.history.map((entry) => {
-            // Clone the entry and ensure parts are also cleaned of _id
-            const cleanedEntry = { role: entry.role, parts: [] };
-            if (entry.parts && Array.isArray(entry.parts)) {
-              cleanedEntry.parts = entry.parts.map((part) => {
-                const { _id, __v, ...rest } = part.toObject
-                  ? part.toObject()
-                  : part; // Handle Mongoose subdocument and plain object
-                return rest;
-              });
+            // Mongoose subdocuments can be tricky. Use toObject() if available.
+            const entryObj = entry.toObject ? entry.toObject() : entry;
+
+            // Clean the parts array first
+            const cleanedParts = [];
+            if (entryObj.parts && Array.isArray(entryObj.parts)) {
+              for (const part of entryObj.parts) {
+                const partObj = part.toObject ? part.toObject() : part;
+                const { _id, __v, ...restOfPart } = partObj; // Destructure to exclude _id and __v
+                cleanedParts.push(restOfPart);
+              }
             }
-            const { _id, __v, ...restOfEntry } = entry.toObject
-              ? entry.toObject()
-              : entry; // Clean the content object itself
-            return { ...restOfEntry, ...cleanedEntry }; // Merge cleaned parts back
+
+            // Clean the overall history entry object itself
+            const { _id, __v, ...restOfEntry } = entryObj; // Destructure to exclude _id and __v
+            return { ...restOfEntry, parts: cleanedParts }; // Return the cleaned entry with its cleaned parts
           })
         : [];
       let title = session
