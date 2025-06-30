@@ -247,7 +247,6 @@ module.exports = {
     if (playerInGame) {
       return interaction.editReply({
         content: `You are already in a game in <#${playerInGame.channelId}>!`,
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -259,7 +258,6 @@ module.exports = {
       if (opponent.bot || opponent.id === challenger.id) {
         return interaction.editReply({
           content: "You can't challenge bots or yourself.",
-          flags: [MessageFlags.Ephemeral],
         });
       }
       const opponentInGame = await Game.findOne({
@@ -268,7 +266,6 @@ module.exports = {
       if (opponentInGame) {
         return interaction.editReply({
           content: `${opponent.username} is already in a game!`,
-          flags: [MessageFlags.Ephemeral],
         });
       }
 
@@ -345,14 +342,12 @@ module.exports = {
       if (!difficulty) {
         return interaction.editReply({
           content: 'You must select a difficulty when playing against the bot.',
-          flags: [MessageFlags.Ephemeral],
         });
       }
       if (!fs.existsSync(stockfishPath)) {
         return interaction.editReply({
           content:
             'Error: The chess engine (Stockfish) is not configured on the bot.',
-          flags: [MessageFlags.Ephemeral],
         });
       }
 
