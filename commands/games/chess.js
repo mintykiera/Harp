@@ -14,6 +14,7 @@ const os = require('os');
 const Game = require('../../models/Game');
 const User = require('../../models/User');
 
+// --- Engine and State Management ---
 const isWindows = os.platform() === 'win32';
 const stockfishPath = isWindows
   ? path.join(__dirname, '..', '..', 'stockfish.exe')
@@ -29,7 +30,7 @@ const difficultyLevels = {
 const activePveEngines = new Map();
 const gameCollectors = new Map();
 
-// --- Helper Functions (unchanged) ---
+// --- Helper Functions ---
 function getBoardImageUrl(fen) {
   const boardOnly = fen.split(' ')[0];
   return `https://chessboardimage.com/${boardOnly}.png?theme=wood`;
@@ -102,11 +103,7 @@ function createEmbed(game, gameDoc, endReason = null) {
         status = 'Timed Out';
         break;
       default:
-        if (endReason.user) {
-          description = `**${endReason.user} has resigned.** ${winnerUsername} wins!`;
-        } else {
-          description = `**Game ended.** ${winnerUsername} wins!`;
-        }
+        description = `**${endReason.user} has resigned.** ${winnerUsername} wins!`;
         status = 'Resigned';
     }
   } else {
@@ -150,7 +147,7 @@ function makeBotMove(game, channelId) {
   });
 }
 
-async function setupGameData(interaction, gameType, options, messageId) {
+async function setupGameData(interaction, gameType, options) {
   const { channelId, client } = interaction;
   const chosenColor = interaction.options.getString('color') || 'random';
   let playerWhite, playerBlack;
@@ -169,6 +166,7 @@ async function setupGameData(interaction, gameType, options, messageId) {
       [playerWhite, playerBlack] =
         Math.random() > 0.5 ? [challenger, opponent] : [opponent, challenger];
   } else {
+    // pve
     const player = interaction.user;
     await updateUserProfile(player);
     const botUser = {
@@ -196,7 +194,6 @@ async function setupGameData(interaction, gameType, options, messageId) {
   return Game.create({
     channelId,
     gameType,
-    messageId,
     playerWhiteId: playerWhite.id,
     playerWhiteUsername: playerWhite.username,
     playerBlackId: playerBlack.id,
@@ -235,11 +232,10 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // Initial checks that are fast can reply directly and exit.
     if (await Game.findOne({ channelId: interaction.channelId })) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'A game is already in progress in this channel!',
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
     }
     const playerInGame = await Game.findOne({
@@ -249,14 +245,11 @@ module.exports = {
       ],
     });
     if (playerInGame) {
-      return interaction.reply({
+      return interaction.editReply({
         content: `You are already in a game in <#${playerInGame.channelId}>!`,
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
     }
-
-    // Defer the reply for all subsequent logic that may take time.
-    await interaction.deferReply();
 
     const challenger = interaction.user;
     const opponent = interaction.options.getUser('opponent');
@@ -266,6 +259,7 @@ module.exports = {
       if (opponent.bot || opponent.id === challenger.id) {
         return interaction.editReply({
           content: "You can't challenge bots or yourself.",
+          ephemeral: true,
         });
       }
       const opponentInGame = await Game.findOne({
@@ -274,6 +268,7 @@ module.exports = {
       if (opponentInGame) {
         return interaction.editReply({
           content: `${opponent.username} is already in a game!`,
+          ephemeral: true,
         });
       }
 
@@ -298,7 +293,6 @@ module.exports = {
         content: `${opponent}`,
         embeds: [challengeEmbed],
         components: [row],
-        fetchReply: true,
       });
 
       try {
@@ -321,19 +315,11 @@ module.exports = {
           components: [],
         });
 
-        const gameDoc = await setupGameData(
-          interaction,
-          'pvp',
-          { challenger, opponent },
-          challengeMessage.id
-        );
-        const game = new Chess(gameDoc.fen);
-
-        await challengeMessage.edit({
-          content: `Game started! ${gameDoc.playerWhiteUsername} is White.`,
-          embeds: [createEmbed(game, gameDoc)],
-          components: [],
+        const gameDoc = await setupGameData(interaction, 'pvp', {
+          challenger,
+          opponent,
         });
+        const game = new Chess(gameDoc.fen);
 
         await challengeMessage.edit({
           content: `Game started! ${gameDoc.playerWhiteUsername} is White.`,
@@ -359,36 +345,29 @@ module.exports = {
       if (!difficulty) {
         return interaction.editReply({
           content: 'You must select a difficulty when playing against the bot.',
+          ephemeral: true,
         });
       }
       if (!fs.existsSync(stockfishPath)) {
         return interaction.editReply({
           content:
             'Error: The chess engine (Stockfish) is not configured on the bot.',
+          ephemeral: true,
         });
       }
 
-      const tempGame = new Chess();
-      const tempEmbed = createEmbed(tempGame, {
-        playerWhiteUsername: interaction.user.username,
-        playerBlackUsername: 'Harp',
-        fen: tempGame.fen(),
+      await interaction.editReply({
+        content: 'Setting up your game against Harp...',
       });
 
-      const gameMessage = await interaction.editReply({
-        embeds: [tempEmbed],
-        fetchReply: true,
-      });
-
-      const gameDoc = await setupGameData(
-        interaction,
-        'pve',
-        { difficulty },
-        gameMessage.id
-      );
+      const gameDoc = await setupGameData(interaction, 'pve', { difficulty });
       const game = new Chess(gameDoc.fen);
 
-      await gameMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
+      const gameMessage = await interaction.followUp({
+        embeds: [createEmbed(game, gameDoc)],
+        fetchReply: true,
+      });
+      await Game.updateOne({ _id: gameDoc._id }, { messageId: gameMessage.id });
 
       if (
         game.turn() === 'w' &&
@@ -399,12 +378,10 @@ module.exports = {
         await gameMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
       }
     }
-    // The collector is initialized after the interaction has been handled.
-    this.initGameCollector(interaction);
   },
 
   initGameCollector: (interaction) => {
-    // This logic is unchanged as it correctly handles the game after setup.
+    // This logic runs after execute() completes and is independent of the initial interaction reply.
     if (gameCollectors.has(interaction.channelId)) {
       gameCollectors.get(interaction.channelId).stop();
     }
@@ -438,7 +415,7 @@ module.exports = {
         if (move === null) {
           const ephemeralMsg = await message.channel.send({
             content: `\`${userInput}\` is not a valid move.`,
-            flags: MessageFlags.Ephemeral,
+            ephemeral: true,
           });
           setTimeout(() => ephemeralMsg.delete().catch(() => {}), 5000);
           return;
