@@ -21,7 +21,7 @@ module.exports = {
     if (!client.openTickets.has(channel.id)) {
       return interaction.editReply({
         content: 'This command can only be used in a ticket channel.',
-        flags: [MessageFlags.Ephemeral], // Make error ephemeral via followUp if needed, but this is okay.
+        flags: [MessageFlags.Ephemeral],
       });
     }
 

@@ -25,7 +25,6 @@ const UserSchema = new mongoose.Schema({
       timestamp: { type: Date, default: Date.now },
     },
   ],
-  // --- NEW FIELD ADDED HERE ---
   recentGames: [
     {
       opponentId: String,
