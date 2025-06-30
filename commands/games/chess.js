@@ -232,11 +232,10 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ ephemeral: true });
     if (await Game.findOne({ channelId: interaction.channelId })) {
-      await interaction.deferReply();
       return interaction.editReply({
         content: 'A game is already in progress in this channel!',
-        flags: [MessageFlags.Ephemeral],
       });
     }
     const playerInGame = await Game.findOne({
