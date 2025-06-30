@@ -1,14 +1,15 @@
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  MessageFlags,
+  ChannelType,
+  PermissionOverwriteType,
 } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('close')
     .setDescription('Closes the current ticket channel.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addStringOption((option) =>
       option
         .setName('reason')
@@ -16,53 +17,55 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-    const { client, channel } = interaction;
+    await interaction.deferReply({ ephemeral: true });
+    const { channel, guild } = interaction;
 
-    if (!client.openTickets.has(channel.id)) {
+    // Validate ticket channel
+    if (
+      channel.type !== ChannelType.GuildText ||
+      !channel.name.startsWith('ticket-')
+    ) {
       return interaction.editReply({
-        content: 'This command can only be used in a ticket channel.',
-        flags: [MessageFlags.Ephemeral],
+        content: '❌ This command can only be used in ticket channels.',
+        ephemeral: true,
       });
     }
 
-    const userId = client.openTickets.get(channel.id);
     const reason =
-      interaction.options.getString('reason') || 'Ticket closed by staff.';
+      interaction.options.getString('reason') || 'No reason provided';
 
     try {
-      const user = await client.users.fetch(userId).catch(() => null);
-      if (user) {
+      // Find ticket owner from permission overwrites
+      const ticketOwner = channel.permissionOverwrites.cache.find(
+        (ow) =>
+          ow.type === PermissionOverwriteType.Member &&
+          !guild.members.cache.get(ow.id)?.user.bot
+      );
+
+      // Notify user if found
+      if (ticketOwner) {
+        const user = await guild.client.users.fetch(ticketOwner.id);
         await user
-          .send(
-            `Your ticket in **${interaction.guild.name}** has been closed. Reason: ${reason}`
-          )
-          .catch(() => {
-            console.log(`Could not DM user ${user.tag} about ticket closure.`);
-          });
+          .send({
+            content: `📬 Your ticket in **${guild.name}** has been closed.\nReason: ${reason}`,
+          })
+          .catch(() => console.log(`[TICKET] Couldn't DM ${user.tag}`));
       }
 
+      // Final response and deletion
       await interaction.editReply({
-        content: 'This ticket will be deleted in 3 seconds...',
+        content: '🗑️ Ticket will be deleted in 3 seconds...',
       });
-
-      setTimeout(() => {
-        channel
-          .delete(reason)
-          .catch((err) =>
-            console.error('Could not delete ticket channel:', err)
-          );
-      }, 3000);
-    } catch (error) {
-      console.error('Error during ticket closing:', error);
-      await interaction.editReply({
-        content: 'An error occurred while trying to close the ticket.',
-      });
-    } finally {
-      client.openTickets.delete(channel.id);
-      console.log(
-        `[INFO] Ticket ${channel.id} closed and removed from memory.`
+      setTimeout(
+        () => channel.delete(`Closed by ${interaction.user.tag}: ${reason}`),
+        3000
       );
+    } catch (error) {
+      console.error('[TICKET CLOSE ERROR]', error);
+      await interaction.editReply({
+        content: '❌ Failed to close ticket. Please check console.',
+        ephemeral: true,
+      });
     }
   },
 };
