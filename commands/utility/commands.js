@@ -7,8 +7,9 @@ module.exports = {
     .setDescription('Lists all of my available commands by category.'),
 
   async execute(interaction) {
-    const categories = new Map();
+    await interaction.deferReply();
 
+    const categories = new Map();
     const commandsToDisplay = interaction.client.commands.filter(
       (cmd) => !cmd.staffOnly && cmd.data.name !== 'commands'
     );

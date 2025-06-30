@@ -10,6 +10,7 @@ const {
 const axios = require('axios');
 const User = require('../../models/User');
 const config = require('../../config.js');
+
 const GOOGLE_API_KEY = config.googleApiKey;
 const SEARCH_ENGINE_ID = config.searchEngineId;
 const MAX_RESULTS = 50;
@@ -48,11 +49,14 @@ module.exports = {
 
   async execute(interaction) {
     if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
-      console.error('ERROR: Google API keys are missing from .env file.');
-      return interaction.editReply({
+      console.error('ERROR: Google API keys are missing from config.');
+      return interaction.reply({
         content: 'Sorry, this command is not configured correctly.',
+        flags: MessageFlags.Ephemeral,
       });
     }
+
+    await interaction.deferReply();
 
     const query = interaction.options.getString('query');
 
@@ -129,12 +133,13 @@ module.exports = {
       componentType: ComponentType.Button,
       time: 90_000,
     });
+
     collector.on('collect', async (i) => {
       if (i.user.id !== interaction.user.id) {
         return i.reply({
           content:
             'Only the person who used the command can interact with these buttons.',
-          flags: [MessageFlags.Ephemeral],
+          flags: MessageFlags.Ephemeral,
         });
       }
       currentPage += i.customId === 'next_page' ? 1 : -1;

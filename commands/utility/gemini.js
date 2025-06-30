@@ -9,13 +9,11 @@ const {
 } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Gemini = require('../../models/Gemini');
-require('dotenv').config();
-
 const config = require('../../config.js');
+
 const GEMINI_API_KEYS =
   config.geminiApiKeys?.split(',').map((key) => key.trim()) || [];
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
   'gemini-1.5-flash-latest',
   'gemini-1.5-pro-latest',
   'gemini-pro',
@@ -98,6 +96,8 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply();
+
     const subcommand = interaction.options.getSubcommand();
     const user = interaction.user;
     const channelId = interaction.channelId;
@@ -225,11 +225,12 @@ module.exports = {
         componentType: ComponentType.Button,
         time: 5 * 60 * 1000,
       });
+
       collector.on('collect', async (i) => {
         if (i.user.id !== interaction.user.id) {
           return i.reply({
             content: 'Only the original user can navigate this response.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         }
         currentPage += i.customId === 'next_page' ? 1 : -1;
@@ -238,6 +239,7 @@ module.exports = {
           components: [generateButtons(currentPage)],
         });
       });
+
       collector.on('end', () => {
         message.edit({ components: [] }).catch(() => {});
       });
@@ -246,7 +248,8 @@ module.exports = {
       const failMsg = `Sorry, something went wrong. ${
         err.message.includes('SAFETY') ? err.message : 'Please try again later.'
       }`;
-      await interaction.editReply({ content: failMsg });
+      if (!interaction.replied)
+        await interaction.editReply({ content: failMsg });
     }
   },
 };

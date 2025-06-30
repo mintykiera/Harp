@@ -3,6 +3,7 @@ const {
   EmbedBuilder,
   PermissionsBitField,
   ChannelType,
+  MessageFlags,
 } = require('discord.js');
 const chrono = require('chrono-node');
 
@@ -37,8 +38,9 @@ module.exports = {
         PermissionsBitField.Flags.ManageWebhooks
       )
     ) {
-      return interaction.editReply({
+      return interaction.reply({
         content: 'I need the "Manage Webhooks" permission to do this!',
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -52,23 +54,26 @@ module.exports = {
     });
 
     if (!parsedDate) {
-      return interaction.editReply({
+      return interaction.reply({
         content:
           'I could not understand that date/time format. Please try something like "5pm" or "tomorrow at 9am".',
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
     if (parsedDate.getTime() <= Date.now()) {
-      return interaction.editReply({
+      return interaction.reply({
         content:
           'The time you provided is in the past. Please schedule for a future time.',
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
     const delayInMs = parsedDate.getTime() - Date.now();
     if (delayInMs > 30 * 24 * 60 * 60 * 1000) {
-      return interaction.editReply({
+      return interaction.reply({
         content: 'You can only schedule messages up to 30 days in the future.',
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -76,7 +81,7 @@ module.exports = {
       .setColor('#57F287')
       .setTitle('✅ Message Scheduled!')
       .setDescription(
-        `Your message will be sent in ${targetChannel.name} at the following time:`
+        `Your message will be sent in ${targetChannel} at the following time:`
       )
       .addFields({
         name: 'Scheduled Time',
@@ -86,7 +91,7 @@ module.exports = {
         text: 'Note: If the bot restarts, this schedule will be cancelled.',
       });
 
-    await interaction.editReply({ embeds: [confirmationEmbed] });
+    await interaction.reply({ embeds: [confirmationEmbed] });
 
     setTimeout(async () => {
       try {
@@ -99,7 +104,7 @@ module.exports = {
         );
         if (!webhook) {
           webhook = await targetChannel.createWebhook({
-            name: 'Scheduler Bot',
+            name: 'Harp Scheduler',
             avatar: interaction.client.user.displayAvatarURL(),
           });
         }

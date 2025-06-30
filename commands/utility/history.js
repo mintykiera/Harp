@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  MessageFlags,
+} = require('discord.js');
 const User = require('../../models/User');
 const Gemini = require('../../models/Gemini');
 
@@ -26,6 +30,8 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply();
+
     const subcommand = interaction.options.getSubcommand();
     const targetUser = interaction.options.getUser('user') || interaction.user;
 
@@ -46,10 +52,14 @@ module.exports = {
       const historyDescription = userProfile.recentGames
         .slice(-10)
         .reverse()
-        .map(
-          (game, i) =>
-            `**${i + 1}.** ${game.result} vs. ${game.opponent} (${game.date})`
-        )
+        .map((game, i) => {
+          const eloChange = game.eloChange;
+          const sign = eloChange > 0 ? '+' : '';
+          const eloString = eloChange ? ` **(${sign}${eloChange})**` : '';
+          return `**${i + 1}.** ${game.result} vs. ${
+            game.opponentUsername
+          }${eloString}`;
+        })
         .join('\n');
 
       const embed = new EmbedBuilder()
@@ -58,6 +68,7 @@ module.exports = {
         .setThumbnail(targetUser.displayAvatarURL())
         .setDescription(historyDescription)
         .setTimestamp();
+
       return interaction.editReply({ embeds: [embed] });
     }
 
@@ -85,6 +96,7 @@ module.exports = {
         .setTitle(`🔎 Your Google Search History`)
         .setDescription(historyDescription)
         .setTimestamp();
+
       return interaction.editReply({ embeds: [embed] });
     }
 
@@ -113,6 +125,7 @@ module.exports = {
         .setTitle(`💬 Your Recent Gemini Conversations`)
         .setDescription(historyDescription)
         .setTimestamp();
+
       return interaction.editReply({ embeds: [embed] });
     }
   },

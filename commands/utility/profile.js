@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  MessageFlags,
+} = require('discord.js');
 const User = require('../../models/User');
 
 module.exports = {
@@ -16,10 +20,13 @@ module.exports = {
     const targetUser = interaction.options.getUser('user') || interaction.user;
 
     if (targetUser.bot) {
-      return interaction.editReply({
+      return interaction.reply({
         content: "Bots don't have game profiles!",
+        flags: [MessageFlags.Ephemeral],
       });
     }
+
+    await interaction.deferReply();
 
     const userProfile = await User.findOne({ userId: targetUser.id });
     if (!userProfile) {

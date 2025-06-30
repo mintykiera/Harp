@@ -14,7 +14,6 @@ const os = require('os');
 const Game = require('../../models/Game');
 const User = require('../../models/User');
 
-// --- Engine and State Management ---
 const isWindows = os.platform() === 'win32';
 const stockfishPath = isWindows
   ? path.join(__dirname, '..', '..', 'stockfish.exe')
@@ -30,7 +29,7 @@ const difficultyLevels = {
 const activePveEngines = new Map();
 const gameCollectors = new Map();
 
-// --- Helper Functions ---
+// --- Helper Functions (unchanged) ---
 function getBoardImageUrl(fen) {
   const boardOnly = fen.split(' ')[0];
   return `https://chessboardimage.com/${boardOnly}.png?theme=wood`;
@@ -166,7 +165,6 @@ async function setupGameData(interaction, gameType, options) {
       [playerWhite, playerBlack] =
         Math.random() > 0.5 ? [challenger, opponent] : [opponent, challenger];
   } else {
-    // pve
     const player = interaction.user;
     await updateUserProfile(player);
     const botUser = {
@@ -232,10 +230,11 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    // Initial checks that are fast can reply directly and exit.
     if (await Game.findOne({ channelId: interaction.channelId })) {
-      return interaction.editReply({
+      return interaction.reply({
         content: 'A game is already in progress in this channel!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
     const playerInGame = await Game.findOne({
@@ -245,11 +244,14 @@ module.exports = {
       ],
     });
     if (playerInGame) {
-      return interaction.editReply({
+      return interaction.reply({
         content: `You are already in a game in <#${playerInGame.channelId}>!`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
+
+    // Defer the reply for all subsequent logic that may take time.
+    await interaction.deferReply();
 
     const challenger = interaction.user;
     const opponent = interaction.options.getUser('opponent');
@@ -259,7 +261,6 @@ module.exports = {
       if (opponent.bot || opponent.id === challenger.id) {
         return interaction.editReply({
           content: "You can't challenge bots or yourself.",
-          ephemeral: true,
         });
       }
       const opponentInGame = await Game.findOne({
@@ -268,7 +269,6 @@ module.exports = {
       if (opponentInGame) {
         return interaction.editReply({
           content: `${opponent.username} is already in a game!`,
-          ephemeral: true,
         });
       }
 
@@ -345,25 +345,19 @@ module.exports = {
       if (!difficulty) {
         return interaction.editReply({
           content: 'You must select a difficulty when playing against the bot.',
-          ephemeral: true,
         });
       }
       if (!fs.existsSync(stockfishPath)) {
         return interaction.editReply({
           content:
             'Error: The chess engine (Stockfish) is not configured on the bot.',
-          ephemeral: true,
         });
       }
-
-      await interaction.editReply({
-        content: 'Setting up your game against Harp...',
-      });
 
       const gameDoc = await setupGameData(interaction, 'pve', { difficulty });
       const game = new Chess(gameDoc.fen);
 
-      const gameMessage = await interaction.followUp({
+      const gameMessage = await interaction.editReply({
         embeds: [createEmbed(game, gameDoc)],
         fetchReply: true,
       });
@@ -378,10 +372,12 @@ module.exports = {
         await gameMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
       }
     }
+    // The collector is initialized after the interaction has been handled.
+    this.initGameCollector(interaction);
   },
 
   initGameCollector: (interaction) => {
-    // This logic runs after execute() completes and is independent of the initial interaction reply.
+    // This logic is unchanged as it correctly handles the game after setup.
     if (gameCollectors.has(interaction.channelId)) {
       gameCollectors.get(interaction.channelId).stop();
     }
@@ -415,7 +411,7 @@ module.exports = {
         if (move === null) {
           const ephemeralMsg = await message.channel.send({
             content: `\`${userInput}\` is not a valid move.`,
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           setTimeout(() => ephemeralMsg.delete().catch(() => {}), 5000);
           return;
