@@ -1,9 +1,8 @@
 // deploy-commands.js
 const { REST, Routes } = require('discord.js');
-const { config } = require('dotenv');
 const fs = require('node:fs');
 const path = require('node:path');
-require('dotenv').config();
+const config = require('./config.js');
 
 const clientId = config.clientId;
 const guildId = config.guildId;
