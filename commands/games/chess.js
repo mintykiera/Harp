@@ -233,9 +233,10 @@ module.exports = {
 
   async execute(interaction) {
     if (await Game.findOne({ channelId: interaction.channelId })) {
+      await interaction.deferReply();
       return interaction.editReply({
         content: 'A game is already in progress in this channel!',
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
     const playerInGame = await Game.findOne({
@@ -247,7 +248,7 @@ module.exports = {
     if (playerInGame) {
       return interaction.editReply({
         content: `You are already in a game in <#${playerInGame.channelId}>!`,
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -259,7 +260,7 @@ module.exports = {
       if (opponent.bot || opponent.id === challenger.id) {
         return interaction.editReply({
           content: "You can't challenge bots or yourself.",
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       const opponentInGame = await Game.findOne({
@@ -268,7 +269,7 @@ module.exports = {
       if (opponentInGame) {
         return interaction.editReply({
           content: `${opponent.username} is already in a game!`,
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
@@ -345,14 +346,14 @@ module.exports = {
       if (!difficulty) {
         return interaction.editReply({
           content: 'You must select a difficulty when playing against the bot.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       if (!fs.existsSync(stockfishPath)) {
         return interaction.editReply({
           content:
             'Error: The chess engine (Stockfish) is not configured on the bot.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
@@ -415,7 +416,7 @@ module.exports = {
         if (move === null) {
           const ephemeralMsg = await message.channel.send({
             content: `\`${userInput}\` is not a valid move.`,
-            ephemeral: true,
+            flags: [MessageFlags.Ephemeral],
           });
           setTimeout(() => ephemeralMsg.delete().catch(() => {}), 5000);
           return;
