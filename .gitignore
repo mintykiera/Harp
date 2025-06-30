@@ -1,10 +1,7 @@
 node_modules/
 .env
-rules.js
 clear-commands.js
 .dockerignore
 package-lock.json
-infractionManager.js
 stockfish_bin
 stockfish.exe
-*.tar
