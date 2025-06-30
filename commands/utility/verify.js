@@ -3,6 +3,7 @@ const {
   ChannelType,
   EmbedBuilder,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 const config = require('../../config.js');
 
@@ -21,12 +22,14 @@ module.exports = {
     if (channel.id !== config.verifyChannelId) {
       return interaction.editReply({
         content: `This command can only be used in the <#${config.verifyChannelId}> channel.`,
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
     if (!member.roles.cache.has(config.unverifiedRoleId)) {
       return interaction.editReply({
         content: 'You do not need to use this command.',
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -36,6 +39,7 @@ module.exports = {
       )[0];
       return interaction.editReply({
         content: `You already have an open verification ticket! Please continue here: <#${existingChannelId}>`,
+        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -77,17 +81,19 @@ module.exports = {
         .setTimestamp();
 
       await ticketChannel.send({
-        content: `<@&${config.staffRoleId}>, a new user is ready for verification.`,
+        content: `A new user is ready for verification.`,
         embeds: [welcomeEmbed],
       });
 
       await interaction.editReply({
         content: `Your private verification ticket has been created! Please click here to continue: ${ticketChannel}`,
+        flags: [MessageFlags.Ephemeral],
       });
     } catch (error) {
       console.error('Error creating verification ticket:', error);
       await interaction.editReply({
         content: 'Sorry, something went wrong while creating your ticket.',
+        flags: [MessageFlags.Ephemeral],
       });
     }
   },

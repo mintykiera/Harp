@@ -3,6 +3,8 @@ const ms = require('ms');
 const rules = require('../../rules.js');
 
 module.exports = {
+  staffOnly: true,
+
   data: new SlashCommandBuilder()
     .setName('timeout')
     .setDescription('Mutes a user for a specific duration (manual action).')

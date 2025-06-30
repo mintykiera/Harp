@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 
 module.exports = {
+  staffOnly: true,
+
   data: new SlashCommandBuilder()
     .setName('clear')
     .setDescription('Deletes a specified number of messages from a channel.')

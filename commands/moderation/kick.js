@@ -2,6 +2,8 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const rules = require('../../rules.js');
 
 module.exports = {
+  staffOnly: true,
+
   data: new SlashCommandBuilder()
     .setName('kick')
     .setDescription('Kicks a user from the server (manual action).')

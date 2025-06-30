@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
+  staffOnly: true,
+
   data: new SlashCommandBuilder()
     .setName('untimeout')
     .setDescription('Removes the timeout from a user.')

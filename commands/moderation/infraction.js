@@ -7,6 +7,8 @@ const rules = require('../../rules.js');
 const { addInfraction } = require('../../infractionManager.js');
 
 module.exports = {
+  staffOnly: true,
+
   data: new SlashCommandBuilder()
     .setName('infraction')
     .setDescription(

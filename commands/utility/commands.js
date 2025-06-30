@@ -8,8 +8,9 @@ module.exports = {
 
   async execute(interaction) {
     const categories = new Map();
+
     const commandsToDisplay = interaction.client.commands.filter(
-      (cmd) => cmd.data.name !== 'commands'
+      (cmd) => !cmd.staffOnly && cmd.data.name !== 'commands'
     );
 
     commandsToDisplay.forEach((cmd) => {

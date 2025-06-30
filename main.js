@@ -344,9 +344,8 @@ async function createTicket(user, type, data, attachments) {
       type: ChannelType.GuildText,
       parent: parentCategoryId,
       topic: `Ticket for ${user.tag} (${user.id}). Type: ${type}`,
-      // CORRECTED: Permissions are for staff and the bot ONLY. The user is not added.
       permissionOverwrites: [
-        { id: guild.id, deny: ['ViewChannel'] }, // @everyone
+        { id: guild.id, deny: ['ViewChannel'] },
         {
           id: STAFF_ROLE_ID,
           allow: [
@@ -433,12 +432,11 @@ async function createTicket(user, type, data, attachments) {
     const row = new ActionRowBuilder().addComponents(closeButton);
 
     await channel.send({
-      content: `<@&${STAFF_ROLE_ID}>, a new ticket has been created.`,
+      content: `A new ticket has been created.`,
       embeds: [reportEmbed],
       components: [row],
     });
 
-    // CORRECTED: The confirmation message reinforces the DM relay logic.
     await user.send(
       `✅ Your ticket has been created successfully! Staff has been notified. **You can continue sending messages here to communicate with them.**`
     );
