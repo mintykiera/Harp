@@ -23,6 +23,8 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageMessages),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
     if (
       !interaction.member.permissions.has(
         PermissionsBitField.Flags.ManageMessages

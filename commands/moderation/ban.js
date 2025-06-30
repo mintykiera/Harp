@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+} = require('discord.js');
 const rules = require('../../rules.js');
 
 module.exports = {
@@ -27,6 +31,8 @@ module.exports = {
         .setDescription('Provide specific details or message link for the log')
     ),
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
     const target = interaction.options.getUser('target');
     const member = await interaction.guild.members
       .fetch(target.id)

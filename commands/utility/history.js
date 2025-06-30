@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const User = require('../../models/User');
-const Gemini = require('../../models/Gemini'); // Assuming this is the correct path
+const Gemini = require('../../models/Gemini');
 
 module.exports = {
   data: new SlashCommandBuilder()

@@ -20,6 +20,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const target = interaction.options.getUser('target');
     const member = await interaction.guild.members
       .fetch(target.id)

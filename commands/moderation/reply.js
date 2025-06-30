@@ -21,6 +21,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const { channel, guild, user, options } = interaction;
     const replyMessage = options.getString('message');
 

@@ -331,7 +331,7 @@ async function createTicket(user, type, data, attachments) {
       permissionOverwrites: [
         { id: guild.id, deny: ['ViewChannel'] },
         {
-          id: STAFF_ROLE_ID.id,
+          id: STAFF_ROLE_ID,
           allow: [
             'ViewChannel',
             'SendMessages',

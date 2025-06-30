@@ -9,9 +9,9 @@ const {
 } = require('discord.js');
 const axios = require('axios');
 const User = require('../../models/User');
-
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-const SEARCH_ENGINE_ID = process.env.SEARCH_ENGINE_ID;
+const config = require('../../config.js');
+const GOOGLE_API_KEY = config.googleApiKey;
+const SEARCH_ENGINE_ID = config.searchEngineId;
 const MAX_RESULTS = 50;
 
 async function fetchGoogleResults(query, start) {

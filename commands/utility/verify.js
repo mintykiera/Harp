@@ -18,12 +18,12 @@ module.exports = {
 
   async execute(interaction) {
     const { user, guild, client, channel } = interaction;
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
     // Check 1: Is this the right channel?
     if (channel.id !== config.verifyChannelId) {
       return interaction.editReply({
         content: `This command can only be used in the <#${config.verifyChannelId}> channel.`,
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -33,7 +33,6 @@ module.exports = {
       return interaction.editReply({
         content:
           'You are already verified and do not need to use this command.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -44,7 +43,6 @@ module.exports = {
       )[0];
       return interaction.editReply({
         content: `You already have an open verification ticket! Please continue here: <#${existingChannelId}>`,
-        flags: [MessageFlags.Ephemeral],
       });
     }
 
@@ -96,14 +94,12 @@ module.exports = {
 
       await interaction.editReply({
         content: `Your private verification ticket has been created! Please click here to continue: ${ticketChannel}`,
-        flags: [MessageFlags.Ephemeral],
       });
     } catch (error) {
       console.error('Error creating verification ticket:', error);
       await interaction.editReply({
         content:
           'Sorry, something went wrong while creating your ticket. Please check bot permissions.',
-        flags: [MessageFlags.Ephemeral],
       });
     }
   },

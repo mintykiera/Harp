@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+} = require('discord.js');
 const config = require('../../config.js');
 
 module.exports = {
@@ -31,6 +35,8 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Epheemral] });
+
     const targetUser = interaction.options.getUser('target');
     const chosenSchoolRoleId = interaction.options.getString('school');
     const member = await interaction.guild.members

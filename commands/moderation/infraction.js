@@ -34,6 +34,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const target = interaction.options.getUser('target');
     const member = interaction.guild.members.cache.get(target.id);
     const ruleBroken = interaction.options.getString('rule');

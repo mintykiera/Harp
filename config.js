@@ -1,15 +1,38 @@
-module.exports = {
-  verifyChannelId: '1389125630485991474',
-  guildId: '1387863830553694320',
-  verifiedRoleId: '1389126461381677188',
-  unverifiedRoleId: '1389126379383291986',
-  staffRoleId: '1389127894508503050',
+require('dotenv').config();
 
+module.exports = {
+  // Discord
+  token: process.env.DISCORD_TOKEN,
+  clientId: process.env.CLIENT_ID,
+  guildId: process.env.GUILD_ID,
+  staffRoleId: process.env.STAFF_ROLE_ID,
+  verifiedRoleId: process.env.VERIFIED_ROLE_ID,
+  unverifiedRoleId: process.env.UNVERIFIED_ROLE_ID,
+
+  // ticket categories
+  reportCategoryId: process.env.REPORT_CATEGORY_ID,
+  questionCategoryId: process.env.QUESTION_CATEGORY_ID,
+  otherCategoryId: process.env.OTHER_CATEGORY_ID,
+
+  // verification
+  verifyChannelId: process.env.VERIFY_CHANNEL_ID,
+
+  // school roles
   schoolRoles: {
-    gbseald: '1389132132735127582',
-    soh: '1389132597371600997',
-    jgsom: '1389132623603044372',
-    sose: '1389132660584091698',
-    rglsoss: '1389132708860657694',
+    gbseald: process.env.GBSEALD,
+    soh: process.env.SOH,
+    jgsom: process.env.JGSOM,
+    sose: process.env.SOSE,
+    rglsoss: process.env.RGLSOSS,
   },
+
+  // external services
+  mongoUri: process.env.MONGO_URI,
+  googleApiKey: process.env.GOOGLE_API_KEY,
+  searchEngineId: process.env.SEARCH_ENGINE_ID,
+  geminiApiKeys: process.env.GEMINI_API_KEYS,
+  stockfishExe: process.STOCKFISH_EXE,
+
+  // port
+  port: process.env.PORT,
 };
