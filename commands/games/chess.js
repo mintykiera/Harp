@@ -18,11 +18,12 @@ const config = require('../../config.js');
 
 // --- Configuration ---
 const isWindows = os.platform() === 'win32';
+
 const stockfishPath =
   config.stockfishExe ||
   (isWindows
     ? path.join(__dirname, '..', '..', 'stockfish.exe')
-    : '/usr/src/app/stockfish');
+    : path.join(__dirname, '..', '..', 'stockfish_bin'));
 const MOVE_TIMEOUT = 120_000; // 2 minutes per move
 const GAME_TIMEOUT = 1_800_000; // 30 minutes total
 
