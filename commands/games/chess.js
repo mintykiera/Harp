@@ -102,7 +102,11 @@ function createEmbed(game, gameDoc, endReason = null) {
         status = 'Timed Out';
         break;
       default:
-        description = `**${endReason.user} has resigned.** ${winnerUsername} wins!`;
+        if (endReason.user) {
+          description = `**${endReason.user} has resigned.** ${winnerUsername} wins!`;
+        } else {
+          description = `**Game ended.** ${winnerUsername} wins!`;
+        }
         status = 'Resigned';
     }
   } else {
