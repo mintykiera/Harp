@@ -38,6 +38,7 @@ client.openTickets = new Collection();
 
 const GUILD_ID = process.env.GUILD_ID;
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
+const port = config.port;
 
 const TICKET_CATEGORIES = {
   Report: process.env.REPORT_CATEGORY_ID,
@@ -466,14 +467,42 @@ client.on(Events.GuildMemberAdd, async (member) => {
 function setupWebServer() {
   const app = express();
   const port = process.env.PORT || 3000;
+
+  // Add health check endpoint
+  app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+  });
+
   app.get('/', (req, res) => res.send('Harp is alive and listening!'));
-  app.listen(port, () =>
-    console.log(`[WEB SERVER] Listening on port ${port}.`)
-  );
+
+  return app.listen(port, () => {
+    console.log(`[WEB SERVER] Listening on port ${port}.`);
+    console.log(`[PORT BINDING] Service bound to port ${port}`); // Confirmation log
+  });
 }
+
 async function startBot() {
-  await connectDB();
-  await client.login(process.env.DISCORD_TOKEN);
+  try {
+    await connectDB();
+
+    // Start web server first
+    const server = setupWebServer();
+
+    // Deploy commands asynchronously without blocking
+    setTimeout(async () => {
+      try {
+        console.log('Starting async command deployment...');
+        await require('./deploy-commands')();
+      } catch (err) {
+        console.error('Command deployment error:', err);
+      }
+    }, 5000);
+
+    await client.login(process.env.DISCORD_TOKEN);
+  } catch (error) {
+    console.error('Bot startup failed:', error);
+    process.exit(1);
+  }
 }
-setupWebServer();
+
 startBot();

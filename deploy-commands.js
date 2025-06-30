@@ -47,10 +47,11 @@ for (const folder of commandFolders) {
   }
 }
 
-const rest = new REST().setToken(token);
+const rest = new REST({ timeout: 30000 }).setToken(token); // Increase timeout
 
-(async () => {
+async function deployCommands() {
   try {
+    console.time('CommandDeployment');
     let route;
     let logMessage;
 
@@ -67,7 +68,12 @@ const rest = new REST().setToken(token);
     const data = await rest.put(route, { body: commands });
 
     console.log(`Successfully reloaded ${data.length} commands.`);
+    console.timeEnd('CommandDeployment');
+    return data;
   } catch (error) {
-    console.error(error);
+    console.error('Command deployment failed:', error);
+    throw error;
   }
-})();
+}
+
+module.exports = deployCommands;
