@@ -6,3 +6,6 @@ clear-commands.js
 Dockerfile
 package-lock.json
 infractionManager.js
+stockfish_bin
+stockfish.exe
+*.tar
