@@ -84,20 +84,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!command) return;
     try {
       await command.execute(interaction);
+
+      if (command.data.name === 'chess' && command.initGameCollector) {
+        command.initGameCollector(interaction);
+      }
     } catch (error) {
-      console.error(`[COMMAND ERROR] ${interaction.commandName}:`, error);
+      console.error(`[COMMAND ERROR] ${command.data.name}:`, error);
 
       try {
-        const errorMessage = 'There was an error executing this command!';
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp({
-            content: errorMessage,
-            flags: MessageFlags.Ephemeral,
+            content: 'There was an error executing this command!',
+            flags: [MessageFlags.Ephemeral],
           });
         } else {
           await interaction.reply({
-            content: errorMessage,
-            flags: MessageFlags.Ephemeral,
+            content: 'There was an error executing this command!',
+            flags: [MessageFlags.Ephemeral],
           });
         }
       } catch (err) {
