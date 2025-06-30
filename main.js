@@ -32,10 +32,8 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// In-memory collection to manage the state of multi-step DM conversations
 const dmConversations = new Collection();
 
-// --- Environment Variables & Constants ---
 const GUILD_ID = process.env.GUILD_ID;
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
 
@@ -45,7 +43,6 @@ const TICKET_CATEGORIES = {
   Other: process.env.OTHER_CATEGORY_ID,
 };
 
-// --- Command Loading (No Changes) ---
 client.commands = new Collection();
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
@@ -75,12 +72,10 @@ for (const folder of commandFolders) {
 }
 console.log('[COMMAND LOADER] Finished loading commands.');
 
-// --- Bot Ready (No Changes) ---
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Ready! Logged in as ${c.user.tag}`);
 });
 
-// --- Interaction Handler (No Changes to logic) ---
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     const command = interaction.client.commands.get(interaction.commandName);
@@ -232,7 +227,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// --- DM and Ticket Relay Handler ---
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
@@ -240,7 +234,6 @@ client.on(Events.MessageCreate, async (message) => {
   if (!guild)
     return console.error('CRITICAL: Guild not found! Check your GUILD_ID.');
 
-  // --- Staff-to-User Relay ---
   const isTicketChannel = Object.values(TICKET_CATEGORIES)
     .filter(Boolean)
     .includes(message.channel.parentId);
@@ -253,7 +246,7 @@ client.on(Events.MessageCreate, async (message) => {
       try {
         const user = await client.users.fetch(ticket.userId);
         await user.send({
-          content: `**${message.author.username} (Staff):** ${message.content}`,
+          content: `**[staff] ${message.author.username}:** ${message.content}`,
           files: message.attachments.map((a) => a.url),
         });
       } catch (error) {
@@ -265,7 +258,6 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // --- User-to-Staff DM Handling ---
   if (!message.inGuild()) {
     try {
       await guild.members.fetch(message.author.id);
@@ -275,7 +267,6 @@ client.on(Events.MessageCreate, async (message) => {
       );
     }
 
-    // Relay message if a ticket is already open
     const existingTicket = await Ticket.findOne({
       userId: message.author.id,
       status: 'open',
@@ -287,11 +278,10 @@ client.on(Events.MessageCreate, async (message) => {
           content: `**${message.author.username}:** ${message.content}`,
           files: message.attachments.map((a) => a.url),
         });
-        return message.react('✅');
+        return;
       }
     }
 
-    // Process message if it's part of the creation flow
     const conversation = dmConversations.get(message.author.id);
     if (conversation && conversation.step === 'awaiting_description') {
       conversation.data.description = message.content;
