@@ -2,3 +2,8 @@ node_modules/
 .env
 rules.js
 config.js
+clear-commands.js
+.dockerignore
+Dockerfile
+package-lock.json
+infractionManager.js

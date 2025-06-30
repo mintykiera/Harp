@@ -16,6 +16,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const { client, channel } = interaction;
 
     if (!client.openTickets.has(channel.id)) {

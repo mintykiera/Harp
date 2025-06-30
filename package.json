@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
-    "start": "npm run deploy:global && node main.js",
+    "start": "npm run deploy:guild && node main.js",
     "deploy:guild": "node deploy-commands.js",
     "deploy:global": "node deploy-commands.js --global",
     "dev": "nodemon --exec \"npm run deploy:guild && node main.js\""

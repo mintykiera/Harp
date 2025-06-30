@@ -1,12 +1,13 @@
 // deploy-commands.js
 const { REST, Routes } = require('discord.js');
+const { config } = require('dotenv');
 const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config();
 
-const clientId = process.env.CLIENT_ID;
-const guildId = process.env.GUILD_ID;
-const token = process.env.DISCORD_TOKEN;
+const clientId = config.clientId;
+const guildId = config.guildId;
+const token = config.token;
 
 if (!clientId || !token) {
   console.error(
