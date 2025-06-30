@@ -3,5 +3,3 @@ node_modules/
 clear-commands.js
 .dockerignore
 package-lock.json
-stockfish_bin
-stockfish.exe
