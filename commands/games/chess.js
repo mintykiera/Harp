@@ -146,7 +146,7 @@ function makeBotMove(game, channelId) {
   });
 }
 
-async function setupGameData(interaction, gameType, options) {
+async function setupGameData(interaction, gameType, options, messageId) {
   const { channelId, client } = interaction;
   const chosenColor = interaction.options.getString('color') || 'random';
   let playerWhite, playerBlack;
@@ -192,6 +192,7 @@ async function setupGameData(interaction, gameType, options) {
   return Game.create({
     channelId,
     gameType,
+    messageId,
     playerWhiteId: playerWhite.id,
     playerWhiteUsername: playerWhite.username,
     playerBlackId: playerBlack.id,
@@ -293,6 +294,7 @@ module.exports = {
         content: `${opponent}`,
         embeds: [challengeEmbed],
         components: [row],
+        fetchReply: true,
       });
 
       try {
@@ -315,11 +317,19 @@ module.exports = {
           components: [],
         });
 
-        const gameDoc = await setupGameData(interaction, 'pvp', {
-          challenger,
-          opponent,
-        });
+        const gameDoc = await setupGameData(
+          interaction,
+          'pvp',
+          { challenger, opponent },
+          challengeMessage.id
+        );
         const game = new Chess(gameDoc.fen);
+
+        await challengeMessage.edit({
+          content: `Game started! ${gameDoc.playerWhiteUsername} is White.`,
+          embeds: [createEmbed(game, gameDoc)],
+          components: [],
+        });
 
         await challengeMessage.edit({
           content: `Game started! ${gameDoc.playerWhiteUsername} is White.`,
@@ -354,14 +364,27 @@ module.exports = {
         });
       }
 
-      const gameDoc = await setupGameData(interaction, 'pve', { difficulty });
-      const game = new Chess(gameDoc.fen);
+      const tempGame = new Chess();
+      const tempEmbed = createEmbed(tempGame, {
+        playerWhiteUsername: interaction.user.username,
+        playerBlackUsername: 'Harp',
+        fen: tempGame.fen(),
+      });
 
       const gameMessage = await interaction.editReply({
-        embeds: [createEmbed(game, gameDoc)],
+        embeds: [tempEmbed],
         fetchReply: true,
       });
-      await Game.updateOne({ _id: gameDoc._id }, { messageId: gameMessage.id });
+
+      const gameDoc = await setupGameData(
+        interaction,
+        'pve',
+        { difficulty },
+        gameMessage.id
+      );
+      const game = new Chess(gameDoc.fen);
+
+      await gameMessage.edit({ embeds: [createEmbed(game, gameDoc)] });
 
       if (
         game.turn() === 'w' &&
