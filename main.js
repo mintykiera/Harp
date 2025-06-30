@@ -82,7 +82,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const command = interaction.client.commands.get(interaction.commandName);
     if (!command) return;
     try {
-      await interaction.deferReply();
       await command.execute(interaction);
       if (command.data.name === 'chess' && command.initGameCollector) {
         command.initGameCollector(interaction);
