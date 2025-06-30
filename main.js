@@ -34,6 +34,7 @@ const client = new Client({
 
 const dmConversations = new Collection();
 client.verificationTickets = new Collection();
+client.openTickets = new Collection();
 
 const GUILD_ID = process.env.GUILD_ID;
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
