@@ -3,6 +3,7 @@ module.exports = {
   guildId: '1387863830553694320',
   verifiedRoleId: '1389126461381677188',
   unverifiedRoleId: '1389126379383291986',
+  staffRoleId: '1389127894508503050',
 
   schoolRoles: {
     gbseald: '1389132132735127582',
