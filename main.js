@@ -239,24 +239,7 @@ client.on(Events.MessageCreate, async (message) => {
     .filter(Boolean)
     .includes(message.channel.parentId);
   if (message.inGuild() && isTicketChannel) {
-    const ticket = await Ticket.findOne({
-      channelId: message.channel.id,
-      status: 'open',
-    });
-    if (ticket) {
-      try {
-        const user = await client.users.fetch(ticket.userId);
-        await user.send({
-          content: `**[staff] ${message.author.username}:** ${message.content}`,
-          files: message.attachments.map((a) => a.url),
-        });
-      } catch (error) {
-        message.channel.send(
-          '⚠️ Could not deliver the message to the user. They may have DMs disabled or have blocked the bot.'
-        );
-      }
-      return;
-    }
+    return;
   }
 
   if (!message.inGuild()) {

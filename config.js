@@ -1,11 +1,8 @@
-// File: /config.js
-
 module.exports = {
-  verifyChannelId: '1389125630485991474', // The channel where /verify is used
-
-  // --- Verification Roles ---
-  verifiedRoleId: '1389126461381677188', // The role for verified members
-  unverifiedRoleId: '1389126379383291986', // The role for new, unverified members
+  verifyChannelId: '1389125630485991474',
+  guildId: '1387863830553694320',
+  verifiedRoleId: '1389126461381677188',
+  unverifiedRoleId: '1389126379383291986',
 
   schoolRoles: {
     gbseald: '1389132132735127582',
