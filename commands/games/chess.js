@@ -198,6 +198,8 @@ async function setupGameData(interaction, gameType, options) {
     playerWhiteUsername: playerWhite.username,
     playerBlackId: playerBlack.id,
     playerBlackUsername: playerBlack.username,
+    messageId: '', // Initialize with empty string
+    fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', // Default starting FEN
   });
 }
 
@@ -325,7 +327,7 @@ module.exports = {
         });
         await Game.updateOne(
           { _id: gameDoc._id },
-          { messageId: challengeMessage.id }
+          { messageId: gameMessage.id }
         );
       } catch (err) {
         await challengeMessage

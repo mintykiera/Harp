@@ -9,6 +9,7 @@ const GameSchema = new mongoose.Schema({
   messageId: {
     type: String,
     required: true,
+    default: 'pending',
   },
   fen: {
     type: String,
