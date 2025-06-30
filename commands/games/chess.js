@@ -14,11 +14,12 @@ const os = require('os');
 const Game = require('../../models/Game');
 const User = require('../../models/User');
 const PGN_DIR = path.join(__dirname, '..', '..', 'chess_pgns');
+const config = require('../../config.js');
 
 // --- Configuration ---
 const isWindows = os.platform() === 'win32';
 const stockfishPath =
-  process.env.STOCKFISH_PATH ||
+  config.stockfishExe ||
   (isWindows
     ? path.join(__dirname, '..', '..', 'stockfish.exe')
     : '/usr/src/app/stockfish');

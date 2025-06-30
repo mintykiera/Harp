@@ -4,7 +4,7 @@ const GameSchema = new mongoose.Schema({
   channelId: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // Excellent: Enforces one game per channel at the DB level.
   },
   messageId: {
     type: String,
@@ -18,12 +18,13 @@ const GameSchema = new mongoose.Schema({
   },
   gameType: {
     type: String,
-    enum: ['pvp', 'pve'],
+    enum: ['pvp', 'pve'], // Excellent: Ensures data integrity.
     required: true,
   },
   playerWhiteId: {
     type: String,
     required: true,
+    index: true, // CORRECTED: Added for faster lookups.
   },
   playerWhiteUsername: {
     type: String,
@@ -32,6 +33,7 @@ const GameSchema = new mongoose.Schema({
   playerBlackId: {
     type: String,
     required: true,
+    index: true, // CORRECTED: Added for faster lookups.
   },
   playerBlackUsername: {
     type: String,
@@ -40,6 +42,7 @@ const GameSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
+    expires: '4h', // OPTIONAL: Automatically deletes game documents after 4 hours.
   },
 });
 
