@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionsBitField,
+  MessageFlags,
+} = require('discord.js');
 
 module.exports = {
   staffOnly: true,

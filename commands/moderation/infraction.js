@@ -2,6 +2,7 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   EmbedBuilder,
+  MessageFlags,
 } = require('discord.js');
 const rules = require('../../rules.js');
 const { addInfraction } = require('../../infractionManager.js');
