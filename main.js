@@ -83,19 +83,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!command) return;
     try {
       await command.execute(interaction);
+
       if (command.data.name === 'chess' && command.initGameCollector) {
         command.initGameCollector(interaction);
       }
     } catch (error) {
       console.error(`[COMMAND ERROR] ${command.data.name}:`, error);
-      await interaction
-        .editReply({ content: 'There was an error executing this command!' })
-        .catch((err) =>
-          interaction.followUp({
+
+      try {
+        if (interaction.replied || interaction.deferred) {
+          // Safe to edit or follow up
+          await interaction.followUp({
             content: 'There was an error executing this command!',
             flags: [MessageFlags.Ephemeral],
-          })
-        );
+          });
+        } else {
+          // First time sending a reply
+          await interaction.reply({
+            content: 'There was an error executing this command!',
+            flags: [MessageFlags.Ephemeral],
+          });
+        }
+      } catch (err) {
+        console.error('❌ Failed to send error message to user:', err);
+      }
     }
     return;
   }

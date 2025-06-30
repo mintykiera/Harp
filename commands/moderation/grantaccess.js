@@ -35,7 +35,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: [MessageFlags.Epheemral] });
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
     const targetUser = interaction.options.getUser('target');
     const chosenSchoolRoleId = interaction.options.getString('school');

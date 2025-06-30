@@ -88,7 +88,7 @@ module.exports = {
         .setTimestamp();
 
       await ticketChannel.send({
-        content: `<@&${config.staffRoleId}>, a new user is ready for verification. User: <@${user.id}>`,
+        content: `A new user is ready for verification. User: <@${user.id}>`,
         embeds: [welcomeEmbed],
       });
 
