@@ -13,6 +13,7 @@ const path = require('path');
 const os = require('os');
 const Game = require('../../models/Game');
 const User = require('../../models/User');
+const PGN_DIR = path.join(__dirname, '..', '..', 'chess_pgns');
 
 // --- Configuration ---
 const isWindows = os.platform() === 'win32';
@@ -442,11 +443,11 @@ async function updateEloRatings(gameDoc, game, reason) {
 }
 
 function saveGamePGN(interaction, game, gameDoc, reason) {
-  if (!fs.existsSync('games')) {
+  if (!fs.existsSync(PGN_DIR)) {
     try {
-      fs.mkdirSync('games');
+      fs.mkdirSync(PGN_DIR, { recursive: true });
     } catch (err) {
-      console.error('Failed to create games directory:', err);
+      console.error('Failed to create PGN directory:', err);
       return;
     }
   }
@@ -476,7 +477,7 @@ function saveGamePGN(interaction, game, gameDoc, reason) {
 ${game.pgn()}`;
 
   const safeFileName = `${gameDoc._id}-${Date.now()}.pgn`;
-  fs.writeFileSync(path.join('games', safeFileName), pgn);
+  fs.writeFileSync(path.join(PGN_DIR, safeFileName), pgn);
 }
 
 // --- Command Implementation ---
