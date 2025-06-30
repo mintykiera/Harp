@@ -3,7 +3,6 @@ node_modules/
 rules.js
 clear-commands.js
 .dockerignore
-Dockerfile
 package-lock.json
 infractionManager.js
 stockfish_bin
