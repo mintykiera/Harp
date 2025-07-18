@@ -422,14 +422,16 @@ function setupWebServer() {
 }
 
 async function startBot() {
-  await connectDB();
+  try {
+    await connectDB();
 
-  const server = setupWebServer();
+    setupWebServer();
 
-  await client.login(process.env.DISCORD_TOKEN);
-
-  console.error('Bot startup failed:', error);
-  process.exit(1);
+    await client.login(process.env.DISCORD_TOKEN);
+  } catch (error) {
+    console.error('Bot startup failed:', error);
+    process.exit(1);
+  }
 }
 
 startBot();
