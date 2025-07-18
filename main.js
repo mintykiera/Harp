@@ -100,7 +100,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ticket.userId
           );
           await targetUser.send(
-            `**[Staff] ${user.username}:** ${replyMessage}`
+            `**[staff] ${user.username}:** ${replyMessage}`
           );
         } catch (e) {
           await interaction.followUp({
@@ -195,12 +195,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (error.code !== 40060)
           console.error('Error cancelling ticket:', error);
       }
+      return;
     }
 
     if (interaction.customId === 'initial_ticket_select') {
-      const conversation = dmConversations.get(userId) || { data: {} };
+      const conversation = dmConversations.get(userId) || {};
+
       conversation.step = 'awaiting_subtype';
       conversation.type = selection;
+      conversation.data = {};
       dmConversations.set(userId, conversation);
 
       let nextEmbed, nextRow;
