@@ -422,27 +422,14 @@ function setupWebServer() {
 }
 
 async function startBot() {
-  try {
-    await connectDB();
+  await connectDB();
 
-    // Start web server first
-    const server = setupWebServer();
+  const server = setupWebServer();
 
-    // Deploy commands asynchronously without blocking
-    setTimeout(async () => {
-      try {
-        console.log('Starting async command deployment...');
-        await require('./deploy-commands')();
-      } catch (err) {
-        console.error('Command deployment error:', err);
-      }
-    }, 5000);
+  await client.login(process.env.DISCORD_TOKEN);
 
-    await client.login(process.env.DISCORD_TOKEN);
-  } catch (error) {
-    console.error('Bot startup failed:', error);
-    process.exit(1);
-  }
+  console.error('Bot startup failed:', error);
+  process.exit(1);
 }
 
 startBot();
