@@ -13,7 +13,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  WebhookClient, // --- ADDED ---
+  WebhookClient,
 } = require('discord.js');
 require('dotenv').config();
 const config = require('./config.js');
@@ -21,7 +21,7 @@ const connectDB = require('./utils/dbConnect');
 const express = require('express');
 const Ticket = require('./models/Ticket');
 
-// --- ADDED: Global Error Handlers to prevent crashes ---
+// Global Error Handlers to prevent crashes
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
 });
@@ -42,8 +42,6 @@ const client = new Client({
 });
 
 const dmConversations = new Collection();
-client.verificationTickets = new Collection();
-client.openTickets = new Collection();
 
 const GUILD_ID = process.env.GUILD_ID;
 const MOD_ROLE_ID = process.env.MOD_ROLE_ID;
@@ -62,7 +60,7 @@ client.once(Events.ClientReady, (c) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  // --- ADDED: Handler for the /reply slash command ---
+  // Handler for the /reply slash command
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'reply') {
       try {
@@ -74,6 +72,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (!ticket) {
           return interaction.editReply({
             content: '⚠️ This command can only be used in a ticket channel.',
+          });
+        }
+        if (ticket.status === 'closed') {
+          return interaction.editReply({
+            content: '⚠️ This ticket is closed. You cannot reply to it.',
           });
         }
 
@@ -116,40 +119,71 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 
+  // --- MODIFIED: Handler for Buttons with Lock & Confirm Logic ---
   if (interaction.isButton()) {
+    // STEP 1: LOCK THE TICKET
     if (interaction.customId.startsWith('close_ticket_')) {
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-      const ticket = await Ticket.findOne({ channelId: interaction.channelId });
-      if (!ticket)
+      const ticket = await Ticket.findOne({
+        channelId: interaction.channelId,
+        status: 'open',
+      });
+      if (!ticket) {
         return interaction.editReply({
-          content: 'This ticket was not found in the database.',
-        });
-
-      try {
-        const user = await client.users.fetch(ticket.userId);
-        await user.send(
-          'Your ticket has been closed by a staff member. If you have another issue, feel free to message me again!'
-        );
-      } catch (err) {
-        console.log("Couldn't DM user about ticket closure.", err);
-        await interaction.editReply({
-          content:
-            'Ticket will be closed, but I could not notify the user (DMs are likely disabled).',
+          content: 'This ticket was not found or is already closed.',
         });
       }
 
+      await interaction.editReply({ content: 'Locking ticket...' });
+
+      try {
+        const user = await client.users.fetch(ticket.userId);
+        await user.send('Your ticket has been closed by a staff member.');
+      } catch (err) {
+        console.log("Couldn't DM user about ticket closure.", err);
+      }
+
+      const channel = interaction.channel;
+      await channel.setName(`closed-${channel.name}`.slice(0, 100));
+
+      await channel.permissionOverwrites.edit(MOD_ROLE_ID, {
+        SendMessages: false,
+      });
+      await channel.permissionOverwrites.edit(ADMIN_ROLE_ID, {
+        SendMessages: false,
+      });
+
+      ticket.status = 'closed';
+      await ticket.save();
+
+      const deleteButton = new ButtonBuilder()
+        .setCustomId(`confirm_delete_${channel.id}`)
+        .setLabel('Delete Channel')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('⛔');
+      const row = new ActionRowBuilder().addComponents(deleteButton);
+
+      await channel.send({
+        content: `Ticket closed by <@${interaction.user.id}>. The channel is now locked and ready for deletion.`,
+        components: [row],
+      });
+      return;
+    }
+
+    // STEP 2: CONFIRM DELETION
+    if (interaction.customId.startsWith('confirm_delete_')) {
       await Ticket.deleteOne({ channelId: interaction.channelId });
-      await interaction.channel.delete('Ticket closed by staff.');
+      await interaction.channel.delete('Ticket permanently deleted by staff.');
     }
     return;
   }
 
+  // Handler for String Select Menus (No Changes Needed)
   if (interaction.isStringSelectMenu()) {
     const userId = interaction.user.id;
     const selection = interaction.values[0];
 
     if (selection === 'cancel') {
-      // --- MODIFIED: Added error handling ---
       try {
         dmConversations.delete(userId);
         return interaction.update({
@@ -164,12 +198,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.customId === 'initial_ticket_select') {
-      const conversation = {
-        step: 'awaiting_subtype',
-        type: selection,
-        data: {},
-      };
+      const conversation = dmConversations.get(userId) || { data: {} };
+      conversation.step = 'awaiting_subtype';
+      conversation.type = selection;
       dmConversations.set(userId, conversation);
+
       let nextEmbed, nextRow;
       if (selection === 'Report') {
         nextEmbed = new EmbedBuilder()
@@ -218,7 +251,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           );
         nextRow = null;
       }
-      // --- MODIFIED: Added error handling ---
       try {
         await interaction.update({
           embeds: [nextEmbed],
@@ -234,7 +266,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     ) {
       const conversation = dmConversations.get(userId);
       if (!conversation) {
-        // --- MODIFIED: Added error handling ---
         try {
           return interaction.update({
             content: 'Your session has expired. Please start over.',
@@ -247,7 +278,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return;
         }
       }
-
       if (interaction.customId === 'report_location_select')
         conversation.data.location = selection;
       else conversation.data.topic = selection;
@@ -259,8 +289,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setDescription(
           'Thank you. Now, please describe your issue in full detail in your next message.'
         );
-
-      // --- MODIFIED: Added error handling ---
       try {
         await interaction.update({ embeds: [embed], components: [] });
       } catch (error) {
@@ -271,20 +299,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// --- FULLY CORRECTED MessageCreate Handler ---
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
   const guild = client.guilds.cache.get(GUILD_ID);
-  if (!guild)
+  if (!guild) {
     return console.error('CRITICAL: Guild not found! Check your GUILD_ID.');
+  }
 
-  const isTicketChannel = Object.values(TICKET_CATEGORIES)
-    .filter(Boolean)
-    .includes(message.channel.parentId);
+  // Ignore messages inside ticket channels (staff use /reply)
+  const isTicketChannel = await Ticket.exists({
+    channelId: message.channel.id,
+  });
   if (message.inGuild() && isTicketChannel) {
     return;
   }
 
+  // --- Logic for DMs ---
   if (!message.inGuild()) {
     try {
       await guild.members.fetch(message.author.id);
@@ -305,50 +337,58 @@ client.on(Events.MessageCreate, async (message) => {
           content: `**${message.author.username}:** ${message.content}`,
           files: message.attachments.map((a) => a.url),
         });
-        return;
       }
+      return;
     }
 
     const conversation = dmConversations.get(message.author.id);
-    if (conversation && conversation.step === 'awaiting_description') {
-      conversation.data.description = message.content;
-      await createTicket(
-        message.author,
-        conversation.type,
-        conversation.data,
-        message.attachments
-      );
-      dmConversations.delete(message.author.id);
+    if (conversation) {
+      if (conversation.step === 'awaiting_description') {
+        // --- FIX for Race Condition ---
+        dmConversations.delete(message.author.id); // Delete state BEFORE starting ticket creation
+        await createTicket(
+          message.author,
+          conversation.type,
+          { ...conversation.data, description: message.content },
+          message.attachments
+        );
+      }
+      // If conversation exists but isn't awaiting description, do nothing.
+      // This prevents the bot from responding while waiting for a button click.
       return;
     }
-    if (conversation) return; // Ignore messages if user is supposed to be using a dropdown
 
-    // Start a new ticket process for a new DM
-    const initialEmbed = new EmbedBuilder()
-      .setColor('#0099ff')
-      .setTitle('Contact Staff')
-      .setDescription(
-        'Hi! Kindly select one of the following below which satisfies your request to contact a staff member:'
-      );
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId('initial_ticket_select')
-      .setPlaceholder('Choose an option...')
-      .addOptions(
-        { label: 'Report a User or Incident', value: 'Report', emoji: '📢' },
-        { label: 'Ask a Question', value: 'Question', emoji: '❓' },
-        { label: 'Other Inquiry', value: 'Other', emoji: '📄' },
-        { label: 'Cancel', value: 'cancel', emoji: '❌' }
-      );
-    const row = new ActionRowBuilder().addComponents(selectMenu);
-    await message.author
-      .send({ embeds: [initialEmbed], components: [row] })
-      .catch(() => console.log(`Could not DM ${message.author.tag}.`));
+    // --- If no conversation exists, start a new one ---
+    // --- FIX for Overlap Bug ---
+    dmConversations.set(message.author.id, { step: 'initiated' }); // Set state immediately
+
+    try {
+      const initialEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle('Contact Staff')
+        .setDescription(
+          'Hi! Kindly select one of the following below which satisfies your request to contact a staff member:'
+        );
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('initial_ticket_select')
+        .setPlaceholder('Choose an option...')
+        .addOptions(
+          { label: 'Report a User or Incident', value: 'Report', emoji: '📢' },
+          { label: 'Ask a Question', value: 'Question', emoji: '❓' },
+          { label: 'Other Inquiry', value: 'Other', emoji: '📄' },
+          { label: 'Cancel', value: 'cancel', emoji: '❌' }
+        );
+      const row = new ActionRowBuilder().addComponents(selectMenu);
+      await message.author.send({ embeds: [initialEmbed], components: [row] });
+    } catch (error) {
+      dmConversations.delete(message.author.id); // Clean up state if DM fails
+      console.log(`Could not DM ${message.author.tag}.`);
+    }
   }
 });
 
-// --- Helper function to create the ticket ---
+// --- FULLY CORRECTED createTicket Helper Function ---
 async function createTicket(user, type, data, attachments) {
-  // --- MODIFIED: Check for both required roles ---
   if (!MOD_ROLE_ID || !ADMIN_ROLE_ID) {
     console.error(
       'CRITICAL: MOD_ROLE_ID or ADMIN_ROLE_ID is not defined in your .env file! Cannot create ticket.'
@@ -358,7 +398,7 @@ async function createTicket(user, type, data, attachments) {
         '❌ Sorry, the bot is not configured correctly by the admin. Please contact them for assistance.'
       );
     } catch (e) {
-      /* Ignore if DMs are closed */
+      /* Ignore */
     }
     return;
   }
@@ -428,6 +468,7 @@ async function createTicket(user, type, data, attachments) {
       channelId: channel.id,
       guildId: guild.id,
       ticketType: type,
+      status: 'open', // Set status to 'open'
       reportDetails: {
         location: data.location,
         topic: data.topic,
@@ -486,7 +527,7 @@ async function createTicket(user, type, data, attachments) {
     const row = new ActionRowBuilder().addComponents(closeButton);
 
     await channel.send({
-      content: `A new ticket has been created.`,
+      content: `A new ticket has been created. <@&${ADMIN_ROLE_ID}> <@&${MOD_ROLE_ID}>`, // Pings staff roles
       embeds: [reportEmbed],
       components: [row],
     });
@@ -506,25 +547,21 @@ function setupWebServer() {
   const app = express();
   const port = process.env.PORT || 3000;
 
-  // Add health check endpoint
   app.get('/health', (req, res) => {
     res.status(200).send('OK');
   });
-
   app.get('/', (req, res) => res.send('Harp is alive and listening!'));
 
   return app.listen(port, () => {
     console.log(`[WEB SERVER] Listening on port ${port}.`);
-    console.log(`[PORT BINDING] Service bound to port ${port}`); // Confirmation log
+    console.log(`[PORT BINDING] Service bound to port ${port}`);
   });
 }
 
 async function startBot() {
   try {
     await connectDB();
-
     setupWebServer();
-
     await client.login(process.env.DISCORD_TOKEN);
   } catch (error) {
     console.error('Bot startup failed:', error);
