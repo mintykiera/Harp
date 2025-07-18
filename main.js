@@ -13,12 +13,21 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  WebhookClient, // --- ADDED ---
 } = require('discord.js');
 require('dotenv').config();
 const config = require('./config.js');
 const connectDB = require('./utils/dbConnect');
 const express = require('express');
 const Ticket = require('./models/Ticket');
+
+// --- ADDED: Global Error Handlers to prevent crashes ---
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error);
+});
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+});
 
 const client = new Client({
   intents: [
@@ -37,7 +46,9 @@ client.verificationTickets = new Collection();
 client.openTickets = new Collection();
 
 const GUILD_ID = process.env.GUILD_ID;
-const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID;
+const MOD_ROLE_ID = process.env.MOD_ROLE_ID;
+const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID;
+
 const port = config.port;
 
 const TICKET_CATEGORIES = {
@@ -51,6 +62,60 @@ client.once(Events.ClientReady, (c) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  // --- ADDED: Handler for the /reply slash command ---
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'reply') {
+      try {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const { channel, guild, user, options } = interaction;
+        const replyMessage = options.getString('message');
+
+        const ticket = await Ticket.findOne({ channelId: channel.id });
+        if (!ticket) {
+          return interaction.editReply({
+            content: '⚠️ This command can only be used in a ticket channel.',
+          });
+        }
+
+        let webhooks = await channel.fetchWebhooks();
+        let webhook = webhooks.find((w) => w.name === 'StaffReplyHook');
+        if (!webhook) {
+          webhook = await channel.createWebhook({
+            name: 'StaffReplyHook',
+            avatar: guild.iconURL(),
+          });
+        }
+
+        await webhook.send({
+          content: replyMessage,
+          username: user.displayName,
+          avatarURL: user.displayAvatarURL(),
+        });
+
+        try {
+          const targetUser = await interaction.client.users.fetch(
+            ticket.userId
+          );
+          await targetUser.send(
+            `**[Staff] ${user.username}:** ${replyMessage}`
+          );
+        } catch (e) {
+          await interaction.followUp({
+            content:
+              '⚠️ Message sent in channel, but the user could not be DMed (their DMs are likely closed).',
+            flags: [MessageFlags.Ephemeral],
+          });
+        }
+
+        return interaction.editReply({
+          content: '✅ Your message has been sent.',
+        });
+      } catch (error) {
+        console.error('Error executing /reply command:', error);
+      }
+    }
+  }
+
   if (interaction.isButton()) {
     if (interaction.customId.startsWith('close_ticket_')) {
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
@@ -84,12 +149,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const selection = interaction.values[0];
 
     if (selection === 'cancel') {
-      dmConversations.delete(userId);
-      return interaction.update({
-        content: 'Ticket creation has been cancelled.',
-        embeds: [],
-        components: [],
-      });
+      // --- MODIFIED: Added error handling ---
+      try {
+        dmConversations.delete(userId);
+        return interaction.update({
+          content: 'Ticket creation has been cancelled.',
+          embeds: [],
+          components: [],
+        });
+      } catch (error) {
+        if (error.code !== 40060)
+          console.error('Error cancelling ticket:', error);
+      }
     }
 
     if (interaction.customId === 'initial_ticket_select') {
@@ -147,21 +218,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
           );
         nextRow = null;
       }
-      await interaction.update({
-        embeds: [nextEmbed],
-        components: nextRow ? [nextRow] : [],
-      });
+      // --- MODIFIED: Added error handling ---
+      try {
+        await interaction.update({
+          embeds: [nextEmbed],
+          components: nextRow ? [nextRow] : [],
+        });
+      } catch (error) {
+        if (error.code !== 40060)
+          console.error('Error updating initial ticket interaction:', error);
+      }
     } else if (
       interaction.customId === 'report_location_select' ||
       interaction.customId === 'question_topic_select'
     ) {
       const conversation = dmConversations.get(userId);
-      if (!conversation)
-        return interaction.update({
-          content: 'Your session has expired. Please start over.',
-          embeds: [],
-          components: [],
-        });
+      if (!conversation) {
+        // --- MODIFIED: Added error handling ---
+        try {
+          return interaction.update({
+            content: 'Your session has expired. Please start over.',
+            embeds: [],
+            components: [],
+          });
+        } catch (error) {
+          if (error.code !== 40060)
+            console.error('Error handling expired ticket session:', error);
+          return;
+        }
+      }
+
       if (interaction.customId === 'report_location_select')
         conversation.data.location = selection;
       else conversation.data.topic = selection;
@@ -173,7 +259,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setDescription(
           'Thank you. Now, please describe your issue in full detail in your next message.'
         );
-      await interaction.update({ embeds: [embed], components: [] });
+
+      // --- MODIFIED: Added error handling ---
+      try {
+        await interaction.update({ embeds: [embed], components: [] });
+      } catch (error) {
+        if (error.code !== 40060)
+          console.error('Error updating final ticket interaction:', error);
+      }
     }
   }
 });
@@ -253,8 +346,23 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// --- Helper function to create the ticket (CORRECTED LOGIC) ---
+// --- Helper function to create the ticket ---
 async function createTicket(user, type, data, attachments) {
+  // --- MODIFIED: Check for both required roles ---
+  if (!MOD_ROLE_ID || !ADMIN_ROLE_ID) {
+    console.error(
+      'CRITICAL: MOD_ROLE_ID or ADMIN_ROLE_ID is not defined in your .env file! Cannot create ticket.'
+    );
+    try {
+      await user.send(
+        '❌ Sorry, the bot is not configured correctly by the admin. Please contact them for assistance.'
+      );
+    } catch (e) {
+      /* Ignore if DMs are closed */
+    }
+    return;
+  }
+
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return;
 
@@ -273,6 +381,7 @@ async function createTicket(user, type, data, attachments) {
     const channelName = `ticket-${type.toLowerCase()}-${user.username}`
       .replace(/[^a-z0-9-]/gi, '')
       .slice(0, 100);
+
     const channel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildText,
@@ -281,7 +390,17 @@ async function createTicket(user, type, data, attachments) {
       permissionOverwrites: [
         { id: guild.id, deny: ['ViewChannel'] },
         {
-          id: STAFF_ROLE_ID,
+          id: ADMIN_ROLE_ID,
+          allow: [
+            'ViewChannel',
+            'SendMessages',
+            'ReadMessageHistory',
+            'AttachFiles',
+            'EmbedLinks',
+          ],
+        },
+        {
+          id: MOD_ROLE_ID,
           allow: [
             'ViewChannel',
             'SendMessages',
@@ -298,6 +417,7 @@ async function createTicket(user, type, data, attachments) {
             'ReadMessageHistory',
             'AttachFiles',
             'EmbedLinks',
+            'ManageWebhooks',
           ],
         },
       ],
@@ -382,28 +502,6 @@ async function createTicket(user, type, data, attachments) {
   }
 }
 
-// --- Welcome Role Handler (No Changes) ---
-client.on(Events.GuildMemberAdd, async (member) => {
-  if (member.guild.id !== config.guildId) return;
-  try {
-    const role = member.guild.roles.cache.get(config.unverifiedRoleId);
-    if (role) {
-      await member.roles.add(role);
-      console.log(`Assigned Unverified role to ${member.user.tag}.`);
-    } else {
-      console.error(
-        `[ERROR] Unverified role with ID ${config.unverifiedRoleId} not found!`
-      );
-    }
-  } catch (error) {
-    console.error(
-      `[ERROR] Could not assign Unverified role to ${member.user.tag}:`,
-      error
-    );
-  }
-});
-
-// --- Web Server & Start Bot (No Changes) ---
 function setupWebServer() {
   const app = express();
   const port = process.env.PORT || 3000;

@@ -3,27 +3,18 @@
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
-    "start": "npm run deploy:guild && node main.js",
-    "deploy:guild": "node deploy-commands.js",
-    "deploy:global": "node deploy-commands.js --global",
-    "dev": "nodemon --exec \"npm run deploy:guild && node main.js\""
+    "start": "node main.js",
+    "dev": "nodemon main.js"
   },
   "keywords": [],
   "author": "kieraesque",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@discordjs/rest": "^2.5.1",
-    "@google/generative-ai": "^0.24.1",
-    "axios": "^1.10.0",
-    "change-case": "^4.1.2",
-    "chess.js": "^1.4.0",
-    "chrono-node": "^2.8.3",
     "discord.js": "^14.20.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "mongoose": "^8.16.1",
-    "ms": "^2.1.3"
+    "mongoose": "^8.16.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

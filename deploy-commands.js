@@ -1,79 +1,44 @@
-// deploy-commands.js
-const { REST, Routes } = require('discord.js');
-const fs = require('node:fs');
-const path = require('node:path');
-const config = require('./config.js');
+// New deploy-commands.js file
 
-const clientId = config.clientId;
-const guildId = config.guildId;
-const token = config.token;
+const { REST, Routes, PermissionFlagsBits } = require('discord.js');
+require('dotenv').config();
 
-if (!clientId || !token) {
-  console.error(
-    'Error: CLIENT_ID or DISCORD_TOKEN is missing from your .env file.'
-  );
-  process.exit(1);
-}
+const commands = [
+  {
+    name: 'reply',
+    description: 'Reply to the user in the ticket thread.',
+    options: [
+      {
+        name: 'message',
+        description: 'Your reply to the user.',
+        type: 3, // 3 = String Type
+        required: true,
+      },
+    ],
+    // This makes the command only visible to members with "Manage Channels" permission by default
+    default_member_permissions: String(PermissionFlagsBits.ManageChannels),
+    dm_permission: false, // Prevents command from being used in DMs
+  },
+];
 
-// Check if the '--global' flag was passed
-const isGlobalDeploy = process.argv.includes('--global');
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-if (!isGlobalDeploy && !guildId) {
-  console.error(
-    'Error: GUILD_ID is missing from your .env file. For global deploy, run with the --global flag.'
-  );
-  process.exit(1);
-}
-
-const commands = [];
-const foldersPath = path.join(__dirname, 'commands');
-const commandFolders = fs.readdirSync(foldersPath);
-
-for (const folder of commandFolders) {
-  const commandsPath = path.join(foldersPath, folder);
-  const commandFiles = fs
-    .readdirSync(commandsPath)
-    .filter((file) => file.endsWith('.js'));
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    if ('data' in command && 'execute' in command) {
-      commands.push(command.data.toJSON());
-    } else {
-      console.log(
-        `[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`
-      );
-    }
-  }
-}
-
-const rest = new REST({ timeout: 30000 }).setToken(token); // Increase timeout
-
-async function deployCommands() {
+(async () => {
   try {
-    console.time('CommandDeployment');
-    let route;
-    let logMessage;
+    console.log('Started refreshing 1 application (/) command.');
 
-    if (isGlobalDeploy) {
-      route = Routes.applicationCommands(clientId);
-      logMessage = `Started refreshing ${commands.length} GLOBAL application (/) commands.`;
-    } else {
-      route = Routes.applicationGuildCommands(clientId, guildId);
-      logMessage = `Started refreshing ${commands.length} application (/) commands for GUILD ${guildId}.`;
-    }
+    const data = await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
+      { body: commands }
+    );
 
-    console.log(logMessage);
-
-    const data = await rest.put(route, { body: commands });
-
-    console.log(`Successfully reloaded ${data.length} commands.`);
-    console.timeEnd('CommandDeployment');
-    return data;
+    console.log(
+      `Successfully reloaded ${data.length} application (/) command.`
+    );
   } catch (error) {
-    console.error('Command deployment failed:', error);
-    throw error;
+    console.error(error);
   }
-}
-
-module.exports = deployCommands;
+})();
