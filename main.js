@@ -46,71 +46,11 @@ const TICKET_CATEGORIES = {
   Other: process.env.OTHER_CATEGORY_ID,
 };
 
-client.commands = new Collection();
-const foldersPath = path.join(__dirname, 'commands');
-const commandFolders = fs.readdirSync(foldersPath);
-console.log('[COMMAND LOADER] Starting to load commands...');
-for (const folder of commandFolders) {
-  const commandsPath = path.join(foldersPath, folder);
-  const commandFiles = fs
-    .readdirSync(commandsPath)
-    .filter((file) => file.endsWith('.js'));
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    try {
-      const command = require(filePath);
-      if ('data' in command && 'execute' in command) {
-        command.category = folder;
-        client.commands.set(command.data.name, command);
-        console.log(`[COMMAND LOADER] Loaded command: /${command.data.name}`);
-      } else {
-        console.log(
-          `[WARNING] Command at ${filePath} is missing "data" or "execute".`
-        );
-      }
-    } catch (error) {
-      console.error(`[ERROR] Failed to load command at ${filePath}:`, error);
-    }
-  }
-}
-console.log('[COMMAND LOADER] Finished loading commands.');
-
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Ready! Logged in as ${c.user.tag}`);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    const command = interaction.client.commands.get(interaction.commandName);
-    if (!command) return;
-    try {
-      await command.execute(interaction);
-
-      if (command.data.name === 'chess' && command.initGameCollector) {
-        command.initGameCollector(interaction);
-      }
-    } catch (error) {
-      console.error(`[COMMAND ERROR] ${command.data.name}:`, error);
-
-      try {
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({
-            content: 'There was an error executing this command!',
-            flags: [MessageFlags.Ephemeral],
-          });
-        } else {
-          await interaction.reply({
-            content: 'There was an error executing this command!',
-            flags: [MessageFlags.Ephemeral],
-          });
-        }
-      } catch (err) {
-        console.error('❌ Failed to send error message to user:', err);
-      }
-    }
-    return;
-  }
-
   if (interaction.isButton()) {
     if (interaction.customId.startsWith('close_ticket_')) {
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });

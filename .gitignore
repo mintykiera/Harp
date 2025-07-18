@@ -3,10 +3,3 @@ node_modules/
 clear-commands.js
 .dockerignore
 package-lock.json
-commands/
-utils/
-infractionManager.js
-rules.js
-stockfish_bin
-stockfish-ubuntu-x86-64-avx2.tar
-stockfish.exe
