@@ -21,7 +21,6 @@ const connectDB = require('./utils/dbConnect');
 const express = require('express');
 const Ticket = require('./models/Ticket');
 
-// Global Error Handlers to prevent crashes
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
 });
@@ -52,8 +51,7 @@ const port = config.port;
 const TICKET_CATEGORIES = {
   Report: process.env.REPORT_CATEGORY_ID,
   Question: process.env.QUESTION_CATEGORY_ID,
-  Other: process.env.OTHER_CATEGORY_ID, // completely optional to make categories for each ticket --- this is just a backup incase needed and i'll be able to quickly update everything. but for now, everything is directed into one category
-  // look at the test server for reference
+  Other: process.env.OTHER_CATEGORY_ID,
 };
 
 client.once(Events.ClientReady, (c) => {
@@ -61,7 +59,6 @@ client.once(Events.ClientReady, (c) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  // Handler for the /reply slash command
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'reply') {
       try {
@@ -121,7 +118,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (interaction.isButton()) {
-    // STEP 1: LOCK THE TICKET
     if (interaction.customId.startsWith('close_ticket_')) {
       await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
       const ticket = await Ticket.findOne({
@@ -145,14 +141,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const channel = interaction.channel;
       await channel.setName(`closed-${channel.name}`.slice(0, 100));
-
       await channel.permissionOverwrites.edit(MOD_ROLE_ID, {
         SendMessages: false,
       });
       await channel.permissionOverwrites.edit(ADMIN_ROLE_ID, {
         SendMessages: false,
       });
-
       ticket.status = 'closed';
       await ticket.save();
 
@@ -200,7 +194,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.customId === 'initial_ticket_select') {
       const conversation = dmConversations.get(userId) || {};
-
       conversation.step = 'awaiting_subtype';
       conversation.type = selection;
       conversation.data = {};
@@ -286,12 +279,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       else conversation.data.topic = selection;
       conversation.step = 'awaiting_description';
       dmConversations.set(userId, conversation);
+
       const embed = new EmbedBuilder()
         .setColor('#2ECC71')
         .setTitle('Final Step: Details')
         .setDescription(
-          'Thank you. Now, please describe your issue in full detail in your next message.'
+          'Thank you. Now, please provide any **additional details** for your ticket.\n\nIf you have no more details, you can simply reply with `none`.'
         );
+
       try {
         await interaction.update({ embeds: [embed], components: [] });
       } catch (error) {
@@ -302,7 +297,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// --- FULLY CORRECTED MessageCreate Handler ---
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
@@ -311,7 +305,6 @@ client.on(Events.MessageCreate, async (message) => {
     return console.error('CRITICAL: Guild not found! Check your GUILD_ID.');
   }
 
-  // Ignore messages inside ticket channels (staff use /reply)
   const isTicketChannel = await Ticket.exists({
     channelId: message.channel.id,
   });
@@ -319,7 +312,6 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  // --- Logic for DMs ---
   if (!message.inGuild()) {
     try {
       await guild.members.fetch(message.author.id);
@@ -347,26 +339,32 @@ client.on(Events.MessageCreate, async (message) => {
     const conversation = dmConversations.get(message.author.id);
     if (conversation) {
       if (conversation.step === 'awaiting_description') {
-        dmConversations.delete(message.author.id); // Delete state BEFORE starting ticket creation
+        dmConversations.delete(message.author.id);
         await createTicket(
           message.author,
           conversation.type,
-          { ...conversation.data, description: message.content },
+          {
+            ...conversation.data,
+            openingMessage: conversation.openingMessage,
+            additionalDetails: message.content,
+          },
           message.attachments
         );
       }
-
       return;
     }
 
-    dmConversations.set(message.author.id, { step: 'initiated' }); // Set state immediately
+    dmConversations.set(message.author.id, {
+      step: 'initiated',
+      openingMessage: message.content,
+    });
 
     try {
       const initialEmbed = new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('Contact Staff')
         .setDescription(
-          'Hi! Kindly select one of the following below which satisfies your request to contact a staff member:'
+          'Hey there! We received your message. Kindly select one of the following below which satisfies your request to contact a staff member:'
         );
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('initial_ticket_select')
@@ -380,7 +378,7 @@ client.on(Events.MessageCreate, async (message) => {
       const row = new ActionRowBuilder().addComponents(selectMenu);
       await message.author.send({ embeds: [initialEmbed], components: [row] });
     } catch (error) {
-      dmConversations.delete(message.author.id); // Clean up state if DM fails
+      dmConversations.delete(message.author.id);
       console.log(`Could not DM ${message.author.tag}.`);
     }
   }
@@ -468,7 +466,8 @@ async function createTicket(user, type, data, attachments) {
       reportDetails: {
         location: data.location,
         topic: data.topic,
-        description: data.description,
+        openingMessage: data.openingMessage,
+        description: data.additionalDetails,
       },
     });
     await newTicket.save();
@@ -487,10 +486,21 @@ async function createTicket(user, type, data, attachments) {
         { name: 'User', value: `<@${user.id}>`, inline: true },
         { name: 'User ID', value: `\`${user.id}\``, inline: true },
         { name: '\u200B', value: '\u200B' },
-        { name: 'Opening Message', value: data.description }
-      )
-      .setTimestamp()
-      .setFooter({ text: `Ticket ID: ${newTicket._id}` });
+        {
+          name: 'Opening Message',
+          value: `> ${data.openingMessage.replace(/\n/g, '\n> ')}`,
+        }
+      );
+
+    const additionalDetails =
+      data.additionalDetails &&
+      data.additionalDetails.toLowerCase().trim() !== 'none'
+        ? data.additionalDetails
+        : '_None provided._';
+    reportEmbed.addFields({
+      name: 'Additional Details',
+      value: additionalDetails,
+    });
 
     if (data.location) {
       reportEmbed.addFields({
@@ -506,6 +516,10 @@ async function createTicket(user, type, data, attachments) {
         inline: true,
       });
     }
+
+    reportEmbed
+      .setTimestamp()
+      .setFooter({ text: `Ticket ID: ${newTicket._id}` });
 
     if (attachments.size > 0) {
       reportEmbed.addFields({
@@ -526,7 +540,7 @@ async function createTicket(user, type, data, attachments) {
     const row = new ActionRowBuilder().addComponents(closeButton);
 
     await channel.send({
-      content: `A new ticket has been created. <@&${ADMIN_ROLE_ID}> <@&${MOD_ROLE_ID}>`,
+      content: `A new ticket has been created.`,
       embeds: [reportEmbed],
       components: [row],
     });
