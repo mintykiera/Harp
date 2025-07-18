@@ -52,7 +52,8 @@ const port = config.port;
 const TICKET_CATEGORIES = {
   Report: process.env.REPORT_CATEGORY_ID,
   Question: process.env.QUESTION_CATEGORY_ID,
-  Other: process.env.OTHER_CATEGORY_ID,
+  Other: process.env.OTHER_CATEGORY_ID, // completely optional to make categories for each ticket --- this is just a backup incase needed and i'll be able to quickly update everything. but for now, everything is directed into one category
+  // look at the test server for reference
 };
 
 client.once(Events.ClientReady, (c) => {
@@ -119,7 +120,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 
-  // --- MODIFIED: Handler for Buttons with Lock & Confirm Logic ---
   if (interaction.isButton()) {
     // STEP 1: LOCK THE TICKET
     if (interaction.customId.startsWith('close_ticket_')) {
@@ -178,7 +178,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // Handler for String Select Menus (No Changes Needed)
+  // Handler for String Select Menus
   if (interaction.isStringSelectMenu()) {
     const userId = interaction.user.id;
     const selection = interaction.values[0];
@@ -347,7 +347,6 @@ client.on(Events.MessageCreate, async (message) => {
     const conversation = dmConversations.get(message.author.id);
     if (conversation) {
       if (conversation.step === 'awaiting_description') {
-        // --- FIX for Race Condition ---
         dmConversations.delete(message.author.id); // Delete state BEFORE starting ticket creation
         await createTicket(
           message.author,
@@ -356,13 +355,10 @@ client.on(Events.MessageCreate, async (message) => {
           message.attachments
         );
       }
-      // If conversation exists but isn't awaiting description, do nothing.
-      // This prevents the bot from responding while waiting for a button click.
+
       return;
     }
 
-    // --- If no conversation exists, start a new one ---
-    // --- FIX for Overlap Bug ---
     dmConversations.set(message.author.id, { step: 'initiated' }); // Set state immediately
 
     try {
@@ -390,7 +386,6 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// --- FULLY CORRECTED createTicket Helper Function ---
 async function createTicket(user, type, data, attachments) {
   if (!MOD_ROLE_ID || !ADMIN_ROLE_ID) {
     console.error(
@@ -471,7 +466,7 @@ async function createTicket(user, type, data, attachments) {
       channelId: channel.id,
       guildId: guild.id,
       ticketType: type,
-      status: 'open', // Set status to 'open'
+      status: 'open',
       reportDetails: {
         location: data.location,
         topic: data.topic,
@@ -530,7 +525,7 @@ async function createTicket(user, type, data, attachments) {
     const row = new ActionRowBuilder().addComponents(closeButton);
 
     await channel.send({
-      content: `A new ticket has been created. <@&${ADMIN_ROLE_ID}> <@&${MOD_ROLE_ID}>`, // Pings staff roles
+      content: `A new ticket has been created.`,
       embeds: [reportEmbed],
       components: [row],
     });
