@@ -395,9 +395,7 @@ async function createTicket(user, type, data, attachments) {
       await user.send(
         '❌ Sorry, the bot is not configured correctly by the admin. Please contact them for assistance.'
       );
-    } catch (e) {
-      /* Ignore */
-    }
+    } catch (e) {}
     return;
   }
 
@@ -478,33 +476,36 @@ async function createTicket(user, type, data, attachments) {
     const reportEmbed = new EmbedBuilder()
       .setColor(
         type === 'Report'
-          ? '#C70039'
+          ? '#E74C3C'
           : type === 'Question'
           ? '#3498DB'
           : '#95A5A6'
       )
-      .setTitle(`New Ticket: ${type}`)
       .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL() })
+      .setTitle(`New ${type} Ticket`)
       .addFields(
         { name: 'User', value: `<@${user.id}>`, inline: true },
-        { name: 'User ID', value: `\`${user.id}\``, inline: true }
+        { name: 'User ID', value: `\`${user.id}\``, inline: true },
+        { name: '\u200B', value: '\u200B' },
+        { name: 'Opening Message', value: data.description }
       )
       .setTimestamp()
-      .setFooter({ text: `Channel ID: ${channel.id}` });
+      .setFooter({ text: `Ticket ID: ${newTicket._id}` });
 
-    if (data.location)
+    if (data.location) {
       reportEmbed.addFields({
         name: 'Report Location',
         value: data.location,
-        inline: false,
+        inline: true,
       });
-    if (data.topic)
+    }
+    if (data.topic) {
       reportEmbed.addFields({
         name: 'Question Topic',
         value: data.topic,
-        inline: false,
+        inline: true,
       });
-    reportEmbed.addFields({ name: 'Description', value: data.description });
+    }
 
     if (attachments.size > 0) {
       reportEmbed.addFields({
@@ -525,7 +526,7 @@ async function createTicket(user, type, data, attachments) {
     const row = new ActionRowBuilder().addComponents(closeButton);
 
     await channel.send({
-      content: `A new ticket has been created.`,
+      content: `A new ticket has been created. <@&${ADMIN_ROLE_ID}> <@&${MOD_ROLE_ID}>`,
       embeds: [reportEmbed],
       components: [row],
     });
