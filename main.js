@@ -117,7 +117,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === 'ticket') {
     if (interaction.options.getSubcommand() === 'lookup') {
-      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+      await interaction.deferReply();
 
       const query = interaction.options.getString('query');
       const guild = interaction.guild;
@@ -128,17 +128,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const userId = mentionMatch[1];
         try {
           user = await client.users.fetch(userId);
-        } catch {
-          /* Ignore error, handled below */
-        }
+        } catch {}
       }
-
       if (!user && /^\d{17,20}$/.test(query)) {
         try {
           user = await client.users.fetch(query);
         } catch {}
       }
-
       if (!user) {
         await guild.members.fetch();
         const member = guild.members.cache.find(
@@ -153,6 +149,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.editReply({
           content:
             '❌ Could not find a user based on your query. Please use their @mention, user ID, or full User#Tag.',
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
@@ -163,14 +160,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (tickets.length === 0) {
         return interaction.editReply({
           content: `✅ No archived tickets found for ${user.tag}.`,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
       const options = tickets.slice(0, 25).map((ticket) => {
         const createdDate = ticket.created.toDateString();
+
+        const descriptionSnippet = ticket.reportDetails.openingMessage
+          ? ticket.reportDetails.openingMessage.slice(0, 80) + '...'
+          : 'No opening message.';
+
         return {
           label: `[${ticket.status.toUpperCase()}] ${ticket.ticketType}`,
-          description: `Created on ${createdDate}`,
+          description: `(${createdDate}) ${descriptionSnippet}`,
           value: ticket._id.toString(),
         };
       });
@@ -365,16 +368,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     if (interaction.customId === 'ticket_lookup_select') {
       const ticketId = interaction.values[0];
-
       await interaction.deferUpdate();
-
       const ticket = await Ticket.findById(ticketId);
 
       if (!ticket) {
         return interaction.followUp({
           content:
             '❌ This ticket could not be found. It may have been deleted.',
-          flags: [MessageFlags.Ephemeral],
+          ephemeral: true,
         });
       }
 
@@ -401,27 +402,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
             value: user ? `<@${ticket.userId}>` : `ID: ${ticket.userId}`,
             inline: true,
           },
-          { name: 'Status', value: ticket.status, inline: true },
+          {
+            name: 'Status',
+            value: `\`${ticket.status.toUpperCase()}\``,
+            inline: true,
+          },
           {
             name: 'Created',
             value: `<t:${createdTimestamp}:F>`,
             inline: false,
           },
-          ...(ticket.reportDetails.openingMessage
-            ? [
-                {
-                  name: 'Opening Message',
-                  value: `> ${ticket.reportDetails.openingMessage.replace(
-                    /\n/g,
-                    '\n> '
-                  )}`,
-                },
-              ]
-            : []),
+
+          {
+            name: 'Opening Message',
+            value: `> ${
+              ticket.reportDetails.openingMessage?.replace(/\n/g, '\n> ') ||
+              '_Not provided._'
+            }`,
+          }
+        )
+        .addFields(
           ...(ticket.reportDetails.location
             ? [
                 {
-                  name: 'Location',
+                  name: 'Report Location',
                   value: ticket.reportDetails.location,
                   inline: true,
                 },
@@ -430,25 +434,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
           ...(ticket.reportDetails.topic
             ? [
                 {
-                  name: 'Topic',
+                  name: 'Question Topic',
                   value: ticket.reportDetails.topic,
                   inline: true,
                 },
               ]
             : []),
+          { name: '\u200B', value: '\u200B' },
           ...(ticket.reportDetails.description
             ? [
                 {
-                  name: 'Additional Details',
+                  name: 'Additional Details Provided',
                   value: ticket.reportDetails.description,
                 },
               ]
             : [])
         )
         .setFooter({ text: `Ticket ID: ${ticket._id}` });
-
       await interaction.editReply({
-        content: '',
+        content: `Showing details for ticket \`${ticket._id}\`:`,
         embeds: [embed],
         components: [],
       });
