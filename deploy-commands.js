@@ -9,13 +9,34 @@ const commands = [
       {
         name: 'message',
         description: 'Your reply to the user.',
-        type: 3, // 3 = String Type
+        type: 3,
         required: true,
       },
     ],
-    // This makes the command only visible to members with "Manage Channels" permission by default
     default_member_permissions: String(PermissionFlagsBits.ManageChannels),
-    dm_permission: false, // Prevents command from being used in DMs
+    dm_permission: false,
+  },
+  {
+    name: 'ticket',
+    description: 'Ticket management commands.',
+    options: [
+      {
+        name: 'lookup',
+        description: 'Look up archived tickets by user mention, ID, or tag.',
+        type: 1,
+        options: [
+          {
+            name: 'query',
+            description:
+              'The @mention, ID, or tag (e.g., User#1234) of the user.',
+            type: 3,
+            required: true,
+          },
+        ],
+      },
+    ],
+    default_member_permissions: String(PermissionFlagsBits.ManageChannels),
+    dm_permission: false,
   },
 ];
 

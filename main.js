@@ -115,6 +115,79 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   }
+  if (interaction.commandName === 'ticket') {
+    if (interaction.options.getSubcommand() === 'lookup') {
+      await interaction.deferReply({ flags: MessageFlags[Ephemeral] });
+
+      const query = interaction.options.getString('query');
+      const guild = interaction.guild;
+      let user;
+
+      const mentionMatch = query.match(/^<@!?(\d+)>$/);
+      if (mentionMatch) {
+        const userId = mentionMatch[1];
+        try {
+          user = await client.users.fetch(userId);
+        } catch {
+          /* Ignore error, handled below */
+        }
+      }
+
+      if (!user && /^\d{17,20}$/.test(query)) {
+        try {
+          user = await client.users.fetch(query);
+        } catch {}
+      }
+
+      if (!user) {
+        await guild.members.fetch();
+        const member = guild.members.cache.find(
+          (m) => m.user.tag.toLowerCase() === query.toLowerCase()
+        );
+        if (member) {
+          user = member.user;
+        }
+      }
+
+      if (!user) {
+        return interaction.editReply({
+          content:
+            '❌ Could not find a user based on your query. Please use their @mention, user ID, or full User#Tag.',
+        });
+      }
+
+      const tickets = await Ticket.find({ userId: user.id }).sort({
+        created: -1,
+      });
+
+      if (tickets.length === 0) {
+        return interaction.editReply({
+          content: `✅ No archived tickets found for ${user.tag}.`,
+        });
+      }
+
+      const options = tickets.slice(0, 25).map((ticket) => {
+        const createdDate = ticket.created.toDateString();
+        return {
+          label: `[${ticket.status.toUpperCase()}] ${ticket.ticketType}`,
+          description: `Created on ${createdDate}`,
+          value: ticket._id.toString(),
+        };
+      });
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('ticket_lookup_select')
+        .setPlaceholder('Select a ticket to view its details...')
+        .addOptions(options);
+
+      const row = new ActionRowBuilder().addComponents(selectMenu);
+
+      await interaction.editReply({
+        content: `Found ${tickets.length} ticket(s) for ${user.tag}. Please select one to view.`,
+        components: [row],
+      });
+    }
+  }
 
   if (interaction.isButton()) {
     if (interaction.customId.startsWith('close_ticket_')) {
@@ -163,15 +236,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // STEP 2: CONFIRM DELETION
     if (interaction.customId.startsWith('confirm_delete_')) {
-      // await Ticket.deleteOne({ channelId: interaction.channelId });
       await interaction.channel.delete('Ticket permanently deleted by staff.');
     }
     return;
   }
 
-  // Handler for String Select Menus
   if (interaction.isStringSelectMenu()) {
     const userId = interaction.user.id;
     const selection = interaction.values[0];
@@ -292,6 +362,96 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (error.code !== 40060)
           console.error('Error updating final ticket interaction:', error);
       }
+    }
+    if (interaction.customId === 'ticket_lookup_select') {
+      const ticketId = interaction.values[0];
+
+      await interaction.deferUpdate();
+
+      const ticket = await Ticket.findById(ticketId);
+
+      if (!ticket) {
+        return interaction.followUp({
+          content:
+            '❌ This ticket could not be found. It may have been deleted.',
+          ephemeral: true,
+        });
+      }
+
+      let user;
+      try {
+        user = await client.users.fetch(ticket.userId);
+      } catch {
+        user = null;
+      }
+
+      const createdTimestamp = Math.floor(ticket.created.getTime() / 1000);
+
+      const embed = new EmbedBuilder()
+        .setColor(ticket.status === 'closed' ? '#95a5a6' : '#2ecc71')
+        .setTitle(`Ticket Details: ${ticket.ticketType}`)
+        .setAuthor(
+          user
+            ? { name: user.tag, iconURL: user.displayAvatarURL() }
+            : { name: 'Unknown User' }
+        )
+        .addFields(
+          {
+            name: 'User',
+            value: user ? `<@${ticket.userId}>` : `ID: ${ticket.userId}`,
+            inline: true,
+          },
+          { name: 'Status', value: ticket.status, inline: true },
+          {
+            name: 'Created',
+            value: `<t:${createdTimestamp}:F>`,
+            inline: false,
+          },
+          ...(ticket.reportDetails.openingMessage
+            ? [
+                {
+                  name: 'Opening Message',
+                  value: `> ${ticket.reportDetails.openingMessage.replace(
+                    /\n/g,
+                    '\n> '
+                  )}`,
+                },
+              ]
+            : []),
+          ...(ticket.reportDetails.location
+            ? [
+                {
+                  name: 'Location',
+                  value: ticket.reportDetails.location,
+                  inline: true,
+                },
+              ]
+            : []),
+          ...(ticket.reportDetails.topic
+            ? [
+                {
+                  name: 'Topic',
+                  value: ticket.reportDetails.topic,
+                  inline: true,
+                },
+              ]
+            : []),
+          ...(ticket.reportDetails.description
+            ? [
+                {
+                  name: 'Additional Details',
+                  value: ticket.reportDetails.description,
+                },
+              ]
+            : [])
+        )
+        .setFooter({ text: `Ticket ID: ${ticket._id}` });
+
+      await interaction.editReply({
+        content: '',
+        embeds: [embed],
+        components: [],
+      });
     }
   }
 });
