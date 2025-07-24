@@ -679,6 +679,7 @@ async function createTicket(user, type, data, attachments) {
             PermissionsBitField.Flags.AttachFiles,
             PermissionsBitField.Flags.EmbedLinks,
             PermissionsBitField.Flags.ManageMessages,
+            PermissionsBitField.Flags.ManageChannels,
           ],
         },
         {
@@ -690,6 +691,7 @@ async function createTicket(user, type, data, attachments) {
             PermissionsBitField.Flags.AttachFiles,
             PermissionsBitField.Flags.EmbedLinks,
             PermissionsBitField.Flags.ManageMessages,
+            PermissionsBitField.Flags.ManageChannels,
           ],
         },
         {
@@ -700,6 +702,7 @@ async function createTicket(user, type, data, attachments) {
             PermissionsBitField.Flags.ReadMessageHistory,
             PermissionsBitField.Flags.EmbedLinks,
             PermissionsBitField.Flags.ManageWebhooks,
+            PermissionsBitField.Flags.ManageChannels,
           ],
         },
       ],
@@ -765,11 +768,9 @@ async function createTicket(user, type, data, attachments) {
         : [])
     );
 
-    reportEmbed
-      .setTimestamp()
-      .setFooter({
-        text: `Ticket #${newTicket.ticketId} • User ID: ${user.id}`,
-      });
+    reportEmbed.setTimestamp().setFooter({
+      text: `Ticket #${newTicket.ticketId} • User ID: ${user.id}`,
+    });
     if (attachments.size > 0) {
       reportEmbed.addFields({
         name: 'Attachments',
