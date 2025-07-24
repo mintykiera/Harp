@@ -743,6 +743,20 @@ async function createTicket(user, type, data, attachments) {
           deny: [PermissionsBitField.Flags.ViewChannel],
         },
         {
+          id: MOD_ROLE_ID,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+          ],
+        },
+        {
+          id: ADMIN_ROLE_ID,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+          ],
+        },
+        {
           id: user.id,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
