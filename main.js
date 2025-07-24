@@ -113,81 +113,81 @@ client.on(Events.InteractionCreate, async (interaction) => {
         console.error('Error executing /reply command:', error);
       }
     }
-  }
-  if (interaction.commandName === 'ticket') {
-    if (interaction.options.getSubcommand() === 'lookup') {
-      await interaction.deferReply();
+    if (interaction.commandName === 'ticket') {
+      if (interaction.options.getSubcommand() === 'lookup') {
+        await interaction.deferReply();
 
-      const query = interaction.options.getString('query');
-      const guild = interaction.guild;
-      let user;
+        const query = interaction.options.getString('query');
+        const guild = interaction.guild;
+        let user;
 
-      const mentionMatch = query.match(/^<@!?(\d+)>$/);
-      if (mentionMatch) {
-        const userId = mentionMatch[1];
-        try {
-          user = await client.users.fetch(userId);
-        } catch {}
-      }
-      if (!user && /^\d{17,20}$/.test(query)) {
-        try {
-          user = await client.users.fetch(query);
-        } catch {}
-      }
-      if (!user) {
-        await guild.members.fetch();
-        const member = guild.members.cache.find(
-          (m) => m.user.tag.toLowerCase() === query.toLowerCase()
-        );
-        if (member) {
-          user = member.user;
+        const mentionMatch = query.match(/^<@!?(\d+)>$/);
+        if (mentionMatch) {
+          const userId = mentionMatch[1];
+          try {
+            user = await client.users.fetch(userId);
+          } catch {}
         }
-      }
+        if (!user && /^\d{17,20}$/.test(query)) {
+          try {
+            user = await client.users.fetch(query);
+          } catch {}
+        }
+        if (!user) {
+          await guild.members.fetch();
+          const member = guild.members.cache.find(
+            (m) => m.user.tag.toLowerCase() === query.toLowerCase()
+          );
+          if (member) {
+            user = member.user;
+          }
+        }
 
-      if (!user) {
-        return interaction.editReply({
-          content:
-            '❌ Could not find a user based on your query. Please use their @mention, user ID, or full User#Tag.',
-          flags: [MessageFlags.Ephemeral],
+        if (!user) {
+          return interaction.editReply({
+            content:
+              '❌ Could not find a user based on your query. Please use their @mention, user ID, or full User#Tag.',
+            flags: [MessageFlags.Ephemeral],
+          });
+        }
+
+        const tickets = await Ticket.find({ userId: user.id }).sort({
+          created: -1,
+        });
+
+        if (tickets.length === 0) {
+          return interaction.editReply({
+            content: `✅ No archived tickets found for ${user.tag}.`,
+            flags: [MessageFlags.Ephemeral],
+          });
+        }
+
+        const options = tickets.slice(0, 25).map((ticket) => {
+          const createdDate = ticket.created.toDateString();
+
+          const descriptionSnippet = ticket.reportDetails.openingMessage
+            ? ticket.reportDetails.openingMessage.slice(0, 75) + '...'
+            : 'No opening message.';
+
+          return {
+            label: `[${ticket.status.toUpperCase()}] ${ticket.ticketType}`,
+            description: `(${createdDate}) ${descriptionSnippet}`,
+            value: ticket._id.toString(),
+          };
+        });
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('ticket_lookup_select')
+          .setPlaceholder('Select a ticket to view its details...')
+          .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        await interaction.editReply({
+          content: `Found ${tickets.length} ticket(s) for ${user.tag}. Please select one to view.`,
+          components: [row],
         });
       }
-
-      const tickets = await Ticket.find({ userId: user.id }).sort({
-        created: -1,
-      });
-
-      if (tickets.length === 0) {
-        return interaction.editReply({
-          content: `✅ No archived tickets found for ${user.tag}.`,
-          flags: [MessageFlags.Ephemeral],
-        });
-      }
-
-      const options = tickets.slice(0, 25).map((ticket) => {
-        const createdDate = ticket.created.toDateString();
-
-        const descriptionSnippet = ticket.reportDetails.openingMessage
-          ? ticket.reportDetails.openingMessage.slice(0, 75) + '...'
-          : 'No opening message.';
-
-        return {
-          label: `[${ticket.status.toUpperCase()}] ${ticket.ticketType}`,
-          description: `(${createdDate}) ${descriptionSnippet}`,
-          value: ticket._id.toString(),
-        };
-      });
-
-      const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('ticket_lookup_select')
-        .setPlaceholder('Select a ticket to view its details...')
-        .addOptions(options);
-
-      const row = new ActionRowBuilder().addComponents(selectMenu);
-
-      await interaction.editReply({
-        content: `Found ${tickets.length} ticket(s) for ${user.tag}. Please select one to view.`,
-        components: [row],
-      });
     }
   }
 
