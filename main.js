@@ -743,16 +743,6 @@ async function createTicket(user, type, data, attachments) {
           deny: [PermissionsBitField.Flags.ViewChannel],
         },
         {
-          id: client.user.id,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory,
-            PermissionsBitField.Flags.EmbedLinks,
-            PermissionsBitField.Flags.ManageWebhooks,
-          ],
-        },
-        {
           id: user.id,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
@@ -761,6 +751,18 @@ async function createTicket(user, type, data, attachments) {
             PermissionsBitField.Flags.AttachFiles,
           ],
           deny: [PermissionsBitField.Flags.MentionEveryone],
+        },
+        {
+          id: client.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageWebhooks,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.ManageGuild,
+          ],
         },
       ],
     });
