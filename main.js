@@ -117,7 +117,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === 'ticket') {
     if (interaction.options.getSubcommand() === 'lookup') {
-      await interaction.deferReply({ flags: MessageFlags[Ephemeral] });
+      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
       const query = interaction.options.getString('query');
       const guild = interaction.guild;
@@ -374,7 +374,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.followUp({
           content:
             '❌ This ticket could not be found. It may have been deleted.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
