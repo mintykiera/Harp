@@ -407,21 +407,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
             value: `\`${ticket.status.toUpperCase()}\``,
             inline: true,
           },
-          {
-            name: 'Created',
-            value: `<t:${createdTimestamp}:F>`,
-            inline: false,
-          },
-
-          {
-            name: 'Opening Message',
-            value: `> ${
-              ticket.reportDetails.openingMessage?.replace(/\n/g, '\n> ') ||
-              '_Not provided._'
-            }`,
-          }
+          { name: 'Created', value: `<t:${createdTimestamp}:F>`, inline: false }
         )
+        .addFields({
+          name: 'Opening Message',
+          value: ticket.reportDetails.openingMessage || '_Not provided._',
+        })
         .addFields(
+          ...(ticket.reportDetails.description
+            ? [
+                {
+                  name: 'Additional Details Provided',
+                  value: `> ${ticket.reportDetails.description.replace(
+                    /\n/g,
+                    '\n> '
+                  )}`,
+                },
+              ]
+            : []),
+          ...(ticket.reportDetails.description &&
+          (ticket.reportDetails.location || ticket.reportDetails.topic)
+            ? [{ name: '\u200B', value: '\u200B' }]
+            : []),
           ...(ticket.reportDetails.location
             ? [
                 {
@@ -439,23 +446,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
                   inline: true,
                 },
               ]
-            : []),
-          { name: '\u200B', value: '\u200B' },
-          ...(ticket.reportDetails.description
-            ? [
-                {
-                  name: 'Additional Details Provided',
-                  value: ticket.reportDetails.description,
-                },
-              ]
             : [])
         )
-        .setFooter({ text: `Ticket ID: ${ticket._id}` });
-      await interaction.editReply({
-        content: `Showing details for ticket \`${ticket._id}\`:`,
-        embeds: [embed],
-        components: [],
-      });
+        .setFooter({
+          text: `Ticket ID: ${ticket._id} • User ID: ${ticket.userId}`,
+        });
     }
   }
 });
@@ -645,45 +640,43 @@ async function createTicket(user, type, data, attachments) {
       )
       .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL() })
       .setTitle(`New ${type} Ticket`)
-      .addFields(
-        { name: 'User', value: `<@${user.id}>`, inline: true },
-        { name: 'User ID', value: `\`${user.id}\``, inline: true },
-        { name: '\u200B', value: '\u200B' },
-        {
-          name: 'Opening Message',
-          value: `> ${data.openingMessage.replace(/\n/g, '\n> ')}`,
-        }
-      );
+      .addFields({ name: 'User', value: `<@${user.id}>`, inline: true })
+      .addFields({
+        name: 'Opening Message',
+        value: data.openingMessage || '_Not provided._',
+      });
 
     const additionalDetails =
       data.additionalDetails &&
       data.additionalDetails.toLowerCase().trim() !== 'none'
         ? data.additionalDetails
-        : '_None provided._';
-    reportEmbed.addFields({
-      name: 'Additional Details',
-      value: additionalDetails,
-    });
+        : null;
 
-    if (data.location) {
-      reportEmbed.addFields({
-        name: 'Report Location',
-        value: data.location,
-        inline: true,
-      });
-    }
-    if (data.topic) {
-      reportEmbed.addFields({
-        name: 'Question Topic',
-        value: data.topic,
-        inline: true,
-      });
-    }
+    reportEmbed.addFields(
+      ...(additionalDetails
+        ? [
+            {
+              name: 'Additional Details Provided',
+              value: `> ${additionalDetails.replace(/\n/g, '\n> ')}`,
+            },
+          ]
+        : []),
+
+      ...(additionalDetails && (data.location || data.topic)
+        ? [{ name: '\u200B', value: '\u200B' }]
+        : []),
+
+      ...(data.location
+        ? [{ name: 'Report Location', value: data.location, inline: true }]
+        : []),
+      ...(data.topic
+        ? [{ name: 'Question Topic', value: data.topic, inline: true }]
+        : [])
+    );
 
     reportEmbed
       .setTimestamp()
-      .setFooter({ text: `Ticket ID: ${newTicket._id}` });
-
+      .setFooter({ text: `Ticket ID: ${newTicket._id} • User ID: ${user.id}` });
     if (attachments.size > 0) {
       reportEmbed.addFields({
         name: 'Attachments',
