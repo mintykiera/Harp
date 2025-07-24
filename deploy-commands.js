@@ -1,5 +1,3 @@
-// New deploy-commands.js file
-
 const { REST, Routes, PermissionFlagsBits } = require('discord.js');
 require('dotenv').config();
 

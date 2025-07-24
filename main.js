@@ -16,7 +16,6 @@ const {
   WebhookClient,
 } = require('discord.js');
 require('dotenv').config();
-const config = require('./config.js');
 const connectDB = require('./utils/dbConnect');
 const express = require('express');
 const Ticket = require('./models/Ticket');
@@ -46,7 +45,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const MOD_ROLE_ID = process.env.MOD_ROLE_ID;
 const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID;
 
-const port = config.port;
+const port = process.env.PORT || 3000;
 
 const TICKET_CATEGORIES = {
   Report: process.env.REPORT_CATEGORY_ID,
