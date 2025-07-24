@@ -168,7 +168,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const createdDate = ticket.created.toDateString();
 
         const descriptionSnippet = ticket.reportDetails.openingMessage
-          ? ticket.reportDetails.openingMessage.slice(0, 80) + '...'
+          ? ticket.reportDetails.openingMessage.slice(0, 75) + '...'
           : 'No opening message.';
 
         return {
