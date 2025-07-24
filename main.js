@@ -165,7 +165,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // STEP 2: CONFIRM DELETION
     if (interaction.customId.startsWith('confirm_delete_')) {
-      await Ticket.deleteOne({ channelId: interaction.channelId });
+      // await Ticket.deleteOne({ channelId: interaction.channelId });
       await interaction.channel.delete('Ticket permanently deleted by staff.');
     }
     return;
