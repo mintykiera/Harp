@@ -1,5 +1,3 @@
-const fs = require('node:fs');
-const path = require('node:path');
 const {
   Client,
   Collection,
@@ -14,6 +12,7 @@ const {
   ButtonStyle,
   ChannelType,
   WebhookClient,
+  PermissionsBitField,
 } = require('discord.js');
 require('dotenv').config();
 const connectDB = require('./utils/dbConnect');
