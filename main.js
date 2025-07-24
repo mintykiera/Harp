@@ -210,6 +210,88 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
   }
+  if (interaction.commandName === 'debug-perms') {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+
+      const guild = interaction.guild;
+      if (!guild)
+        return interaction.editReply('This command must be run in a server.');
+
+      const botMember = await guild.members.fetch(client.user.id);
+
+      const categoryToCheck = guild.channels.cache.get(
+        process.env.REPORT_CATEGORY_ID
+      );
+      if (!categoryToCheck) {
+        return interaction.editReply(
+          `Error: Could not find the category with ID ${process.env.REPORT_CATEGORY_ID}. Please check your .env file.`
+        );
+      }
+
+      const hasGlobalManageChannels = botMember.permissions.has(
+        PermissionsBitField.Flags.ManageChannels
+      );
+      const hasCategoryManageChannels = categoryToCheck
+        .permissionsFor(botMember)
+        .has(PermissionsBitField.Flags.ManageChannels);
+      const hasCategoryViewChannel = categoryToCheck
+        .permissionsFor(botMember)
+        .has(PermissionsBitField.Flags.ViewChannel);
+
+      const botRole = botMember.roles.highest;
+      const adminRole = await guild.roles.fetch(ADMIN_ROLE_ID);
+      const modRole = await guild.roles.fetch(MOD_ROLE_ID);
+
+      const isBotRoleHigherThanAdmin = adminRole
+        ? botRole.position > adminRole.position
+        : 'N/A';
+      const isBotRoleHigherThanMod = modRole
+        ? botRole.position > modRole.position
+        : 'N/A';
+
+      const report = `
+        ## 🔍 Permission Diagnostics Report
+
+        **Target Category:** ${categoryToCheck.name} (\`${categoryToCheck.id}\`)
+        **Bot's Highest Role:** ${botRole.name} (Position: ${botRole.position})
+
+        ---
+        ### Required Permissions Checklist
+        1.  **Can Manage Channels (Server-Wide):** \`${hasGlobalManageChannels}\`
+        2.  **Can View Category:** \`${hasCategoryViewChannel}\`
+        3.  **Can Manage Channels (In Category):** \`${hasCategoryManageChannels}\`
+
+        ---
+        ### Role Hierarchy Checklist
+        *   Admin Role: ${
+          adminRole
+            ? `${adminRole.name} (Position: ${adminRole.position})`
+            : 'Not Found'
+        }
+        *   Mod Role: ${
+          modRole
+            ? `${modRole.name} (Position: ${modRole.position})`
+            : 'Not Found'
+        }
+        
+        *   **Is Bot Role Higher than Admin Role?** \`${isBotRoleHigherThanAdmin}\`
+        *   **Is Bot Role Higher than Mod Role?** \`${isBotRoleHigherThanMod}\`
+
+        ---
+        ### Conclusion
+        *   To create a ticket, all three permissions must be \`true\`.
+        *   To manage permissions for Admins/Mods, the Bot Role position must be higher (e.g., \`true\`).
+        `;
+
+      await interaction.editReply({ content: report });
+    } catch (e) {
+      console.error('Error running debug command:', e);
+      await interaction.editReply(
+        'An error occurred while running the diagnostics.'
+      );
+    }
+  }
 
   if (interaction.isButton()) {
     if (interaction.customId.startsWith('close_ticket_')) {
