@@ -738,42 +738,16 @@ async function createTicket(user, type, data, attachments) {
       parent: parentCategoryId,
       topic: `Ticket #${ticketNumber} for ${user.tag} (${user.id}). Type: ${type}`,
       permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: [PermissionsBitField.Flags.ViewChannel],
-        },
-        {
-          id: MOD_ROLE_ID,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-          ],
-        },
-        {
-          id: ADMIN_ROLE_ID,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-          ],
-        },
-        {
-          id: user.id,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory,
-            PermissionsBitField.Flags.AttachFiles,
-          ],
-          deny: [PermissionsBitField.Flags.MentionEveryone],
-        },
+        { id: guild.id, deny: ['ViewChannel'] },
         {
           id: client.user.id,
           allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory,
-            PermissionsBitField.Flags.EmbedLinks,
-            PermissionsBitField.Flags.ManageWebhooks,
+            'ViewChannel',
+            'SendMessages',
+            'ReadMessageHistory',
+            'AttachFiles',
+            'EmbedLinks',
+            'ManageWebhooks',
           ],
         },
       ],
