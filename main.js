@@ -18,12 +18,15 @@ require('dotenv').config();
 const connectDB = require('./utils/dbConnect');
 const express = require('express');
 const Ticket = require('./models/Ticket');
+const Counter = require('./models/Counter');
 
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
+  process.exit(1);
 });
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
+  process.exit(1);
 });
 
 const client = new Client({
@@ -51,6 +54,18 @@ const TICKET_CATEGORIES = {
   Question: process.env.QUESTION_CATEGORY_ID,
   Other: process.env.OTHER_CATEGORY_ID,
 };
+
+async function getNextSequenceValue(sequenceName) {
+  const sequenceDocument = await Counter.findByIdAndUpdate(
+    sequenceName,
+    { $inc: { seq: 1 } },
+    // Options:
+    // new: true     - returns the document *after* it's been updated
+    // upsert: true  - if the document doesn't exist, it creates it
+    { new: true, upsert: true }
+  );
+  return sequenceDocument.seq;
+}
 
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Ready! Logged in as ${c.user.tag}`);
@@ -113,81 +128,86 @@ client.on(Events.InteractionCreate, async (interaction) => {
         console.error('Error executing /reply command:', error);
       }
     }
-    if (interaction.commandName === 'ticket') {
-      if (interaction.options.getSubcommand() === 'lookup') {
-        await interaction.deferReply();
+  }
+  if (interaction.commandName === 'ticket') {
+    if (interaction.options.getSubcommand() === 'lookup') {
+      await interaction.deferReply();
 
-        const query = interaction.options.getString('query');
-        const guild = interaction.guild;
-        let user;
+      const query = interaction.options.getString('query');
+      const guild = interaction.guild;
+      let user;
 
-        const mentionMatch = query.match(/^<@!?(\d+)>$/);
-        if (mentionMatch) {
-          const userId = mentionMatch[1];
-          try {
-            user = await client.users.fetch(userId);
-          } catch {}
-        }
-        if (!user && /^\d{17,20}$/.test(query)) {
-          try {
-            user = await client.users.fetch(query);
-          } catch {}
-        }
-        if (!user) {
-          await guild.members.fetch();
-          const member = guild.members.cache.find(
-            (m) => m.user.tag.toLowerCase() === query.toLowerCase()
-          );
+      const mentionMatch = query.match(/^<@!?(\d+)>$/);
+      if (mentionMatch) {
+        const userId = mentionMatch[1];
+        try {
+          user = await client.users.fetch(userId);
+        } catch {}
+      }
+      if (!user && /^\d{17,20}$/.test(query)) {
+        try {
+          user = await client.users.fetch(query);
+        } catch {}
+      }
+      if (!user) {
+        try {
+          const members = await guild.members.search({
+            query: query,
+            limit: 1,
+          });
+          const member = members.first();
           if (member) {
             user = member.user;
           }
+        } catch (e) {
+          console.error('Failed to search for member:', e);
         }
+      }
 
-        if (!user) {
-          return interaction.editReply({
-            content:
-              '❌ Could not find a user based on your query. Please use their @mention, user ID, or full User#Tag.',
-            flags: [MessageFlags.Ephemeral],
-          });
-        }
-
-        const tickets = await Ticket.find({ userId: user.id }).sort({
-          created: -1,
-        });
-
-        if (tickets.length === 0) {
-          return interaction.editReply({
-            content: `✅ No archived tickets found for ${user.tag}.`,
-            flags: [MessageFlags.Ephemeral],
-          });
-        }
-
-        const options = tickets.slice(0, 25).map((ticket) => {
-          const createdDate = ticket.created.toDateString();
-
-          const descriptionSnippet = ticket.reportDetails.openingMessage
-            ? ticket.reportDetails.openingMessage.slice(0, 75) + '...'
-            : 'No opening message.';
-
-          return {
-            label: `[${ticket.status.toUpperCase()}] ${ticket.ticketType}`,
-            description: `(${createdDate}) ${descriptionSnippet}`,
-            value: ticket._id.toString(),
-          };
-        });
-
-        const selectMenu = new StringSelectMenuBuilder()
-          .setCustomId('ticket_lookup_select')
-          .setPlaceholder('Select a ticket to view its details...')
-          .addOptions(options);
-
-        const row = new ActionRowBuilder().addComponents(selectMenu);
-
-        await interaction.editReply({
-          content: `Found ${tickets.length} ticket(s) for ${user.tag}. Please select one to view.`,
-          components: [row],
+      if (!user) {
+        return interaction.editReply({
+          content:
+            '❌ Could not find a user based on your query. Please use their @mention, user ID, or full User#Tag.',
+          flags: [MessageFlags.Ephemeral],
         });
       }
+
+      const tickets = await Ticket.find({ userId: user.id }).sort({
+        created: -1,
+      });
+
+      if (tickets.length === 0) {
+        return interaction.editReply({
+          content: `✅ No archived tickets found for ${user.tag}.`,
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+
+      const options = tickets.slice(0, 25).map((ticket) => {
+        const createdDate = ticket.created.toDateString();
+
+        const descriptionSnippet = ticket.reportDetails.openingMessage
+          ? ticket.reportDetails.openingMessage.slice(0, 75) + '...'
+          : 'No opening message.';
+
+        return {
+          label: `[${ticket.status.toUpperCase()}] ${ticket.ticketType}`,
+          description: `(${createdDate}) ${descriptionSnippet}`,
+          value: ticket._id.toString(),
+        };
+      });
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('ticket_lookup_select')
+        .setPlaceholder('Select a ticket to view its details...')
+        .addOptions(options);
+
+      const row = new ActionRowBuilder().addComponents(selectMenu);
+
+      await interaction.editReply({
+        content: `Found ${tickets.length} ticket(s) for ${user.tag}. Please select one to view.`,
+        components: [row],
+      });
     }
   }
 
@@ -239,6 +259,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.customId.startsWith('confirm_delete_')) {
+      if (
+        !interaction.member.permissions.has(
+          PermissionsBitField.Flags.ManageChannels
+        )
+      ) {
+        return interaction.reply({
+          content: '❌ You do not have permission to delete this channel.',
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+      try {
+        await Ticket.findOneAndUpdate(
+          { channelId: interaction.channel.id },
+          { status: 'deleted' }
+        );
+      } catch (e) {
+        console.error('Failed to mark ticket as deleted in DB:', e);
+      }
       await interaction.channel.delete('Ticket permanently deleted by staff.');
     }
     return;
@@ -488,7 +526,19 @@ client.on(Events.MessageCreate, async (message) => {
       status: 'open',
     });
     if (existingTicket) {
-      const ticketChannel = guild.channels.cache.get(existingTicket.channelId);
+      let ticketChannel = guild.channels.cache.get(existingTicket.channelId);
+      if (!ticketChannel) {
+        try {
+          ticketChannel = await guild.channels.fetch(existingTicket.channelId);
+        } catch (e) {
+          console.error(
+            `Failed to fetch channel ${existingTicket.channelId}`,
+            e
+          );
+          return;
+        }
+      }
+
       if (ticketChannel) {
         ticketChannel.send({
           content: `**${message.author.username}:** ${message.content}`,
@@ -501,17 +551,29 @@ client.on(Events.MessageCreate, async (message) => {
     const conversation = dmConversations.get(message.author.id);
     if (conversation) {
       if (conversation.step === 'awaiting_description') {
-        dmConversations.delete(message.author.id);
-        await createTicket(
-          message.author,
-          conversation.type,
-          {
-            ...conversation.data,
-            openingMessage: conversation.openingMessage,
-            additionalDetails: message.content,
-          },
-          message.attachments
-        );
+        try {
+          await createTicket(
+            message.author,
+            conversation.type,
+            {
+              ...conversation.data,
+              openingMessage: conversation.openingMessage,
+              additionalDetails: message.content,
+            },
+            message.attachments
+          );
+          dmConversations.delete(message.author.id);
+        } catch (error) {
+          console.error(
+            'Failed to create ticket, preserving conversation state.',
+            error
+          );
+          await message.author
+            .send(
+              '❌ Something went wrong creating your ticket. Please try sending your last message again.'
+            )
+            .catch(() => {});
+        }
       }
       return;
     }
@@ -574,7 +636,17 @@ async function createTicket(user, type, data, attachments) {
   }
 
   try {
-    const channelName = `ticket-${type.toLowerCase()}-${user.username}`
+    const ticketNumber = await getNextSequenceValue('ticketCounter');
+    if (!ticketNumber) {
+      console.error(
+        'CRITICAL: Could not retrieve a ticket number from the database.'
+      );
+      await user.send(
+        '❌ A critical error occurred with the ticket system. Please notify an admin.'
+      );
+      return;
+    }
+    const channelName = `${type.toLowerCase()}-${user.username}-${ticketNumber}`
       .replace(/[^a-z0-9-]/gi, '')
       .slice(0, 100);
 
@@ -582,38 +654,52 @@ async function createTicket(user, type, data, attachments) {
       name: channelName,
       type: ChannelType.GuildText,
       parent: parentCategoryId,
-      topic: `Ticket for ${user.tag} (${user.id}). Type: ${type}`,
+      topic: `Ticket #${ticketNumber} for ${user.tag} (${user.id}). Type: ${type}`,
       permissionOverwrites: [
-        { id: guild.id, deny: ['ViewChannel'] },
+        {
+          id: guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel],
+        },
+        {
+          id: user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+          ],
+          deny: [PermissionsBitField.Flags.MentionEveryone],
+        },
         {
           id: ADMIN_ROLE_ID,
           allow: [
-            'ViewChannel',
-            'SendMessages',
-            'ReadMessageHistory',
-            'AttachFiles',
-            'EmbedLinks',
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageMessages,
           ],
         },
         {
           id: MOD_ROLE_ID,
           allow: [
-            'ViewChannel',
-            'SendMessages',
-            'ReadMessageHistory',
-            'AttachFiles',
-            'EmbedLinks',
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageMessages,
           ],
         },
         {
           id: client.user.id,
           allow: [
-            'ViewChannel',
-            'SendMessages',
-            'ReadMessageHistory',
-            'AttachFiles',
-            'EmbedLinks',
-            'ManageWebhooks',
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageWebhooks,
           ],
         },
       ],
@@ -623,6 +709,7 @@ async function createTicket(user, type, data, attachments) {
       userId: user.id,
       channelId: channel.id,
       guildId: guild.id,
+      ticketId: ticketNumber,
       ticketType: type,
       status: 'open',
       reportDetails: {
@@ -680,7 +767,9 @@ async function createTicket(user, type, data, attachments) {
 
     reportEmbed
       .setTimestamp()
-      .setFooter({ text: `Ticket ID: ${newTicket._id} • User ID: ${user.id}` });
+      .setFooter({
+        text: `Ticket #${newTicket.ticketId} • User ID: ${user.id}`,
+      });
     if (attachments.size > 0) {
       reportEmbed.addFields({
         name: 'Attachments',

@@ -14,6 +14,10 @@ const ticketSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  ticketId: {
+    type: Number,
+    required: true,
+  },
   ticketType: {
     type: String,
     required: true,
