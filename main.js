@@ -375,7 +375,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.followUp({
           content:
             '❌ This ticket could not be found. It may have been deleted.',
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
 
