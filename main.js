@@ -760,8 +760,6 @@ async function createTicket(user, type, data, attachments) {
             PermissionsBitField.Flags.ReadMessageHistory,
             PermissionsBitField.Flags.EmbedLinks,
             PermissionsBitField.Flags.ManageWebhooks,
-            PermissionsBitField.Flags.ManageChannels,
-            PermissionsBitField.Flags.ManageGuild,
           ],
         },
       ],
