@@ -5,34 +5,28 @@ const ticketSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-
   channelId: {
     type: String,
     required: true,
     unique: true,
   },
-
   guildId: {
     type: String,
     required: true,
   },
-
   ticketType: {
     type: String,
     required: true,
   },
-
   status: {
     type: String,
     required: true,
     default: 'open',
   },
-
   reportDetails: {
     location: { type: String },
-
     topic: { type: String },
-
+    openingMessage: { type: String },
     description: { type: String },
   },
   created: {
