@@ -1,5 +1,17 @@
-node_modules/
+# .dockerignore
+
+# Ignore git files
+.git
+.gitignore
+
+# Ignore local development artifacts
+node_modules
+npm-debug.log
+
+# Ignore secrets file - these should be injected as environment variables
 .env
-clear-commands.js
+
+# Ignore development-only files
 .dockerignore
-package-lock.json
+nodemon.json
+README.md
