@@ -450,6 +450,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setFooter({
           text: `Ticket ID: ${ticket._id} • User ID: ${ticket.userId}`,
         });
+      await interaction.editReply({
+        content: `Showing details for ticket \`${ticket._id}\`:`,
+        embeds: [embed],
+        components: [],
+      });
     }
   }
 });
@@ -649,7 +654,7 @@ async function createTicket(user, type, data, attachments) {
       data.additionalDetails &&
       data.additionalDetails.toLowerCase().trim() !== 'none'
         ? data.additionalDetails
-        : null;
+        : '_None provided._';
 
     reportEmbed.addFields(
       ...(additionalDetails
